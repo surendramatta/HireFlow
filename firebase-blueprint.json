@@ -1,0 +1,69 @@
+{
+  "entities": {
+    "User": {
+      "path": "users/{userId}",
+      "fields": {
+        "fullName": "string",
+        "email": "string",
+        "phone": "string",
+        "location": "string",
+        "linkedInUrl": "string",
+        "portfolioUrl": "string",
+        "gitHubUrl": "string",
+        "targetTitles": "array",
+        "preferredLocation": "string",
+        "remoteOnly": "boolean",
+        "minSalary": "number",
+        "yearsOfExperience": "number",
+        "skills": "array",
+        "resumeText": "string",
+        "lastUpdated": "string"
+      }
+    },
+    "Job": {
+      "path": "jobs/{jobId}",
+      "fields": {
+        "title": "string",
+        "company": "string",
+        "location": "string",
+        "isRemote": "boolean",
+        "type": "string",
+        "salaryRange": "string",
+        "minSalary": "number",
+        "postedDate": "string",
+        "platform": "string",
+        "matchScore": "number",
+        "skillsRequired": "array",
+        "matchingSkills": "array",
+        "missingSkills": "array",
+        "description": "string",
+        "requirements": "array",
+        "benefits": "array",
+        "companySize": "string",
+        "applyUrl": "string"
+      }
+    },
+    "Application": {
+      "path": "users/{userId}/applications/{appId}",
+      "fields": {
+        "jobId": "string",
+        "title": "string",
+        "company": "string",
+        "location": "string",
+        "salaryRange": "string",
+        "platform": "string",
+        "status": "string",
+        "appliedDate": "string",
+        "lastUpdated": "string",
+        "matchScoreAtApply": "number",
+        "coverLetterUsed": "string",
+        "screeningAnswers": "map",
+        "notes": "string",
+        "interviewDate": "string",
+        "followUpDueDate": "string",
+        "contactName": "string",
+        "contactEmail": "string"
+      }
+    }
+  }
+}
