@@ -50,7 +50,11 @@ function MainAppContent() {
     let isInitialFetchDone = false;
 
     const unsubscribe = subscribeToJobs(async (liveJobs) => {
-      setJobs(liveJobs);
+      if (liveJobs && liveJobs.length > 0) {
+        setJobs(liveJobs);
+      } else {
+        setJobs(initialJobs);
+      }
 
       // If database has 0 jobs and we haven't triggered auto-search yet, fetch real live jobs from Web API
       if (liveJobs.length === 0 && !isInitialFetchDone) {
@@ -128,6 +132,29 @@ function MainAppContent() {
   const handleApplyJob = async (job: JobListing, tailoredCoverLetter?: string) => {
     const todayStr = new Date().toISOString().split("T")[0];
 
+    let finalCoverLetter = tailoredCoverLetter;
+    if (!finalCoverLetter) {
+      try {
+        const res = await fetch("/api/ai/generate-cover-letter", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            candidateName: profile.fullName || "Candidate",
+            candidateBackground: `${profile.skills?.join(", ")}. ${profile.resumeText ? profile.resumeText.slice(0, 500) : profile.targetTitles?.join(", ") || ""}`,
+            jobTitle: job.title,
+            jobCompany: job.company,
+            jobDescription: job.description || job.requirements?.join(" ") || "Software engineering opportunity",
+            tone: "professional, tailored, high-impact",
+          }),
+        });
+        const data = await res.json();
+        finalCoverLetter = data.coverLetter || `Dear Hiring Team at ${job.company},\n\nI am excited to apply for the ${job.title} position...`;
+      } catch (err) {
+        console.warn("Cover letter generation error in handleApplyJob:", err);
+        finalCoverLetter = `Dear Hiring Team at ${job.company},\n\nI am writing to express my interest in the ${job.title} position at ${job.company}. With my background in ${profile.skills?.join(", ")}, I am confident I can make an immediate impact.\n\nBest regards,\n${profile.fullName || "Candidate"}`;
+      }
+    }
+
     const newRecord: ApplicationRecord = {
       id: `app-${job.id}-${Date.now()}`,
       jobId: job.id,
@@ -141,7 +168,7 @@ function MainAppContent() {
       appliedDate: todayStr,
       lastUpdated: todayStr,
       matchScoreAtApply: job.matchScore,
-      coverLetterUsed: tailoredCoverLetter || `Cover letter generated for ${job.company} - ${job.title}`,
+      coverLetterUsed: finalCoverLetter,
     };
 
     // Save directly to Firestore if logged in
@@ -151,7 +178,7 @@ function MainAppContent() {
       // Add Auto-Apply log
       const newLog: AutoApplyLog = {
         id: `log-${Date.now()}`,
-        timestamp: "Just now",
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         company: job.company,
         role: job.title,
         status: "success",
@@ -169,8 +196,62 @@ function MainAppContent() {
     } else {
       // Local fallback for guest
       setApplications((prev) => [newRecord, ...prev.filter((a) => a.jobId !== job.id)]);
+
+      const newLog: AutoApplyLog = {
+        id: `log-${Date.now()}`,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        company: job.company,
+        role: job.title,
+        status: "success",
+        matchScore: job.matchScore,
+        message: `Applied via ${job.platform}. Custom Gemini cover letter generated & saved.`,
+      };
+      setLogs((prev) => [newLog, ...prev]);
+
+      setAutoApplyConfig((prev) => ({
+        ...prev,
+        appliedToday: prev.appliedToday + 1,
+      }));
     }
   };
+
+  // 6. Background Autopilot Engine: Automatically applies to eligible jobs when autopilot is ENABLED
+  useEffect(() => {
+    if (!autoApplyConfig.enabled) return;
+
+    const autopilotInterval = setInterval(async () => {
+      // Check daily limit
+      if (autoApplyConfig.appliedToday >= autoApplyConfig.dailyLimit) return;
+
+      const safeApps = applications || [];
+      const safeJobs = jobs || [];
+      const unapplied = safeJobs.filter(
+        (j) => !safeApps.some((a) => a.jobId === j.id && a.status !== "saved")
+      );
+
+      if (unapplied.length === 0) return;
+
+      const highMatchJobs = unapplied
+        .filter((j) => (j.matchScore || 0) >= (autoApplyConfig.minMatchScore || 70))
+        .sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
+
+      const targetJob = highMatchJobs[0] || unapplied[0];
+      if (!targetJob) return;
+
+      console.log("HireFlow Autopilot active: auto-applying to", targetJob.company, targetJob.title);
+      await handleApplyJob(targetJob);
+    }, 10000); // Auto-applies every 10 seconds while Autopilot is running
+
+    return () => clearInterval(autopilotInterval);
+  }, [
+    autoApplyConfig.enabled,
+    autoApplyConfig.appliedToday,
+    autoApplyConfig.dailyLimit,
+    autoApplyConfig.minMatchScore,
+    jobs,
+    applications,
+    user
+  ]);
 
   const handleSaveJob = async (job: JobListing) => {
     const currentlySaved = savedJobIds.includes(job.id);

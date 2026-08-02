@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 import { JobListing, CandidateProfile, ApplicationRecord, TabType } from "../types";
+import { JobDetailModal } from "./JobDetailModal";
+import { JobApplyAgentModal } from "./JobApplyAgentModal";
 import { 
   Search, 
   Filter, 
@@ -21,7 +23,9 @@ import {
   Plus,
   X,
   Globe,
-  Loader2
+  Loader2,
+  Bot,
+  Maximize2
 } from "lucide-react";
 
 interface JobSearchProps {
@@ -52,6 +56,50 @@ export const JobSearch: React.FC<JobSearchProps> = ({
   const [remoteOnlyFilter, setRemoteOnlyFilter] = useState(false);
   const [minMatchFilter, setMinMatchFilter] = useState<number>(50);
   const [isSearchingWeb, setIsSearchingWeb] = useState(false);
+
+  // Tsenta-Style URL & Description Importer State
+  const [importUrlInput, setImportUrlInput] = useState("");
+  const [isImportingUrl, setIsImportingUrl] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+
+  const handleImportJobUrl = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!importUrlInput.trim()) return;
+
+    setIsImportingUrl(true);
+    setImportError(null);
+
+    try {
+      const isUrl = importUrlInput.trim().startsWith("http://") || importUrlInput.trim().startsWith("https://");
+      const res = await fetch("/api/ai/parse-job-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: isUrl ? importUrlInput.trim() : undefined,
+          rawText: !isUrl ? importUrlInput.trim() : undefined,
+          candidateSkills: profile.skills || [],
+        }),
+      });
+
+      if (!res.ok) throw new Error("Failed to parse job details");
+      const data = await res.json();
+      if (data.job && onAddCustomJob) {
+        const { id, ...jobPayload } = data.job;
+        const createdId = await onAddCustomJob(jobPayload);
+        const fullJob = { ...jobPayload, id: createdId || id };
+        setSelectedJob(fullJob);
+        setViewingDetailJob(fullJob);
+        setImportUrlInput("");
+        setApplySuccessMessage(`Successfully imported "${fullJob.title} at ${fullJob.company}"! Match Score: ${fullJob.matchScore}%`);
+        setTimeout(() => setApplySuccessMessage(null), 5000);
+      }
+    } catch (err: any) {
+      console.error("Import error:", err);
+      setImportError("Unable to extract job details from link. Please verify URL format or paste raw job description text.");
+    } finally {
+      setIsImportingUrl(false);
+    }
+  };
 
   const handleSearchRealWebJobs = async () => {
     setIsSearchingWeb(true);
@@ -101,6 +149,10 @@ export const JobSearch: React.FC<JobSearchProps> = ({
   const [tailoredCoverLetter, setTailoredCoverLetter] = useState<string | null>(null);
   const [aiScreeningAnswers, setAiScreeningAnswers] = useState<Record<string, string> | null>(null);
   const [applySuccessMessage, setApplySuccessMessage] = useState<string | null>(null);
+
+  // Full-Screen Job Modal & Autonomous Application Agent Modals
+  const [viewingDetailJob, setViewingDetailJob] = useState<JobListing | null>(null);
+  const [applyingAgentJob, setApplyingAgentJob] = useState<JobListing | null>(null);
 
   const handleAddJobSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -198,9 +250,34 @@ export const JobSearch: React.FC<JobSearchProps> = ({
   });
 
   const [resumeFilterOnly, setResumeFilterOnly] = useState(false);
+  const [hideAppliedFilter, setHideAppliedFilter] = useState<boolean>(true);
+
+  const isApplied = (job: JobListing | string) => {
+    if (!job) return false;
+    const targetId = typeof job === "string" ? job : job.id;
+    const targetCompany = typeof job === "object" ? (job.company || "").toLowerCase().trim() : "";
+    const targetTitle = typeof job === "object" ? (job.title || "").toLowerCase().trim() : "";
+
+    return (applications || []).some((a) => {
+      if (a.status === "saved") return false;
+      if (a.jobId && a.jobId === targetId) return true;
+      if (
+        targetCompany &&
+        targetTitle &&
+        (a.company || "").toLowerCase().trim() === targetCompany &&
+        (a.title || "").toLowerCase().trim() === targetTitle
+      ) {
+        return true;
+      }
+      return false;
+    });
+  };
 
   const filteredJobs = processedJobs
     .filter((job) => {
+      const applied = isApplied(job);
+      const matchesAppliedFilter = !hideAppliedFilter || !applied;
+
       const matchesQuery =
         (job.title || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
         (job.company || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -213,14 +290,11 @@ export const JobSearch: React.FC<JobSearchProps> = ({
 
       const matchesResumeFilter = !resumeFilterOnly || ((job.matchingSkills || []).length > 0 || job.matchScore >= 80);
 
-      return matchesQuery && matchesPlatform && matchesRemote && matchesMatchScore && matchesResumeFilter;
+      return matchesAppliedFilter && matchesQuery && matchesPlatform && matchesRemote && matchesMatchScore && matchesResumeFilter;
     })
     .sort((a, b) => b.matchScore - a.matchScore);
 
   const activeJob = selectedJob || (filteredJobs.length > 0 ? filteredJobs[0] : null);
-
-  const isApplied = (jobId: string) =>
-    (applications || []).some((a) => a.jobId === jobId && a.status !== "saved");
 
   const handleGenerateCoverLetter = async (job: JobListing) => {
     setIsTailoring(true);
@@ -279,20 +353,73 @@ export const JobSearch: React.FC<JobSearchProps> = ({
   };
 
   const handleApplyClick = (job: JobListing) => {
-    onApplyJob(job, tailoredCoverLetter || undefined);
-    if (job.applyUrl && (job.applyUrl.startsWith("http://") || job.applyUrl.startsWith("https://"))) {
-      try {
-        window.open(job.applyUrl, "_blank", "noopener,noreferrer");
-      } catch (e) {
-        console.warn("Notice opening job url:", e);
-      }
-    }
-    setApplySuccessMessage(`Applied & tracked ${job.company}! Opening official career portal...`);
-    setTimeout(() => setApplySuccessMessage(null), 3500);
+    setApplyingAgentJob(job);
   };
 
   return (
     <div className="space-y-6">
+      {/* Tsenta-Style Instant Job URL / Description Auto-Apply Importer */}
+      <div className="bg-gradient-to-r from-indigo-950/80 via-slate-900/90 to-purple-950/80 rounded-2xl p-5 border border-indigo-500/30 shadow-xl space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex items-center space-x-2">
+            <span className="p-2 rounded-xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
+              <Sparkles className="w-5 h-5 animate-pulse" />
+            </span>
+            <div>
+              <h2 className="text-sm font-extrabold text-white flex items-center space-x-2">
+                <span>Instant Job Link Importer & AI Auto-Apply</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-400/20 text-amber-300 border border-amber-400/30">
+                  Tsenta Auto-Pilot
+                </span>
+              </h2>
+              <p className="text-xs text-slate-300">
+                Paste any job vacancy URL (LinkedIn, Greenhouse, Lever, Workday, Indeed) or raw job description text.
+              </p>
+            </div>
+          </div>
+          <span className="text-[11px] text-indigo-300/80 font-mono hidden md:inline">
+            Supports Greenhouse • Lever • Workday • LinkedIn
+          </span>
+        </div>
+
+        <form onSubmit={handleImportJobUrl} className="flex flex-col sm:flex-row items-center gap-2">
+          <div className="relative flex-1 w-full">
+            <Globe className="w-4 h-4 text-indigo-400 absolute left-3.5 top-3" />
+            <input
+              type="text"
+              placeholder="https://boards.greenhouse.io/stripe/jobs/12345 or paste job description..."
+              value={importUrlInput}
+              onChange={(e) => setImportUrlInput(e.target.value)}
+              className="w-full pl-10 pr-4 py-2.5 bg-slate-950/90 border border-indigo-500/40 rounded-xl text-xs text-white placeholder-slate-400 focus:outline-none focus:border-indigo-400 shadow-inner"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={isImportingUrl || !importUrlInput.trim()}
+            className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-400 hover:to-purple-500 disabled:opacity-50 text-xs font-bold text-white transition flex items-center justify-center space-x-2 shrink-0 shadow-lg shadow-indigo-500/25 cursor-pointer"
+          >
+            {isImportingUrl ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin text-amber-300" />
+                <span>Extracting Job Data...</span>
+              </>
+            ) : (
+              <>
+                <Zap className="w-4 h-4 text-amber-300 fill-amber-300" />
+                <span>Import & Auto-Apply</span>
+              </>
+            )}
+          </button>
+        </form>
+
+        {importError && (
+          <p className="text-xs text-rose-400 bg-rose-500/10 p-2.5 rounded-xl border border-rose-500/20 flex items-center space-x-2">
+            <XCircle className="w-4 h-4 shrink-0" />
+            <span>{importError}</span>
+          </p>
+        )}
+      </div>
+
       {/* Header & Filter Controls */}
       <div className="bg-slate-900/80 rounded-2xl p-5 border border-slate-800 space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -377,7 +504,26 @@ export const JobSearch: React.FC<JobSearchProps> = ({
             ))}
           </div>
 
-          <div className="flex flex-wrap items-center gap-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setHideAppliedFilter(!hideAppliedFilter)}
+              className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition flex items-center space-x-1.5 cursor-pointer ${
+                hideAppliedFilter
+                  ? "bg-indigo-500/20 border-indigo-500/50 text-indigo-300"
+                  : "bg-slate-950/80 border-slate-700 text-slate-400 hover:text-slate-200"
+              }`}
+              title="Toggle visibility of jobs you have already applied to"
+            >
+              <CheckCircle className={`w-3.5 h-3.5 ${hideAppliedFilter ? "text-indigo-400" : "text-slate-400"}`} />
+              <span>Hide Applied Jobs</span>
+              {(applications || []).filter((a) => a.status !== "saved").length > 0 && (
+                <span className="ml-1 px-1.5 py-0.5 rounded-full bg-indigo-500/30 text-[10px] text-indigo-200 font-bold">
+                  {(applications || []).filter((a) => a.status !== "saved").length}
+                </span>
+              )}
+            </button>
+
             <button
               onClick={() => setResumeFilterOnly(!resumeFilterOnly)}
               className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition flex items-center space-x-1.5 ${
@@ -594,18 +740,27 @@ export const JobSearch: React.FC<JobSearchProps> = ({
                     <div className="text-2xl font-black text-emerald-400">{activeJob.matchScore}%</div>
                   </div>
 
-                  <div className="flex items-center space-x-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <button
                       onClick={() => handleApplyClick(activeJob)}
-                      disabled={isApplied(activeJob.id)}
-                      className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 ${
-                        isApplied(activeJob.id)
-                          ? "bg-slate-800 text-slate-400 cursor-not-allowed"
+                      disabled={isApplied(activeJob)}
+                      className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 ${
+                        isApplied(activeJob)
+                          ? "bg-slate-800 text-slate-400 cursor-not-allowed border border-slate-700"
                           : "bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/30"
                       }`}
                     >
-                      <Send className="w-3.5 h-3.5" />
-                      <span>{isApplied(activeJob.id) ? "Applied" : "1-Click Apply"}</span>
+                      <Bot className="w-4 h-4 text-amber-300 animate-bounce" />
+                      <span>{isApplied(activeJob) ? "Applied" : "Auto-Apply Agent"}</span>
+                    </button>
+
+                    <button
+                      onClick={() => setViewingDetailJob(activeJob)}
+                      className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition flex items-center space-x-1.5 border border-slate-700"
+                      title="Open full job description modal"
+                    >
+                      <Maximize2 className="w-3.5 h-3.5 text-indigo-400" />
+                      <span className="hidden sm:inline">Full Description</span>
                     </button>
 
                     {activeJob.applyUrl && (
@@ -617,13 +772,13 @@ export const JobSearch: React.FC<JobSearchProps> = ({
                         title="Open Official Job Posting on Career Portal"
                       >
                         <ExternalLink className="w-3.5 h-3.5 text-indigo-400" />
-                        <span>Open Real Job Link</span>
+                        <span className="hidden md:inline">Open Career URL</span>
                       </a>
                     )}
 
                     <button
                       onClick={() => onSaveJob(activeJob)}
-                      className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition"
+                      className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition border border-slate-700"
                       title="Save to Tracker"
                     >
                       <Briefcase className="w-4 h-4" />
@@ -885,6 +1040,34 @@ export const JobSearch: React.FC<JobSearchProps> = ({
             </form>
           </div>
         </div>
+      )}
+      {/* Modal 1: Full Job Description Viewer */}
+      {viewingDetailJob && (
+        <JobDetailModal
+          job={viewingDetailJob}
+          profile={profile}
+          isApplied={isApplied(viewingDetailJob)}
+          onClose={() => setViewingDetailJob(null)}
+          onStartAutoApply={(job) => {
+            setViewingDetailJob(null);
+            setApplyingAgentJob(job);
+          }}
+          onSaveJob={onSaveJob}
+        />
+      )}
+
+      {/* Modal 2: Autonomous Agent Auto-Apply Login & Form Submission */}
+      {applyingAgentJob && (
+        <JobApplyAgentModal
+          job={applyingAgentJob}
+          profile={profile}
+          onClose={() => setApplyingAgentJob(null)}
+          onCompleteApply={(job, coverLetter) => {
+            onApplyJob(job, coverLetter);
+            setApplySuccessMessage(`Applied & tracked ${job.company}! Form submission completed.`);
+            setTimeout(() => setApplySuccessMessage(null), 4000);
+          }}
+        />
       )}
     </div>
   );
