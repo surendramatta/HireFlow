@@ -8,7 +8,7 @@ export type TabType =
   | "interview" 
   | "analytics";
 
-export type ApplicationStatus = "saved" | "applied" | "screening" | "interviewing" | "offer" | "rejected";
+export type ApplicationStatus = "saved" | "ready_to_submit" | "applied" | "screening" | "interviewing" | "offer" | "rejected";
 
 export interface WorkExperience {
   id: string;
@@ -111,6 +111,7 @@ export interface AutoApplyConfig {
   enabled: boolean;
   dailyLimit: number;
   appliedToday: number;
+  lastResetDate?: string;
   minMatchScore: number;
   targetRoles: string[];
   targetLocations: string[];

@@ -38,6 +38,9 @@ interface JobSearchProps {
   selectedJob: JobListing | null;
   setSelectedJob: (job: JobListing | null) => void;
   setActiveTab: (tab: TabType) => void;
+  isSearchingJobs?: boolean;
+  setIsSearchingJobs?: (val: boolean) => void;
+  setJobs?: React.Dispatch<React.SetStateAction<JobListing[]>>;
 }
 
 export const JobSearch: React.FC<JobSearchProps> = ({

@@ -47,23 +47,7 @@ export const ResumeBuilder: React.FC<ResumeBuilderProps> = ({ profile, setProfil
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [analysisResult, setAnalysisResult] = useState<ResumeAnalysisResult | null>({
-    atsScore: 88,
-    impactScore: 82,
-    brevityScore: 90,
-    extractedSkills: profile.skills || ["TypeScript", "React", "Node.js"],
-    missingKeywords: ["Docker", "GraphQL", "CI/CD Pipeline", "System Architecture", "Unit Testing"],
-    strengths: [
-      "Excellent skill alignment for senior fullstack and frontend engineering roles",
-      "Clear quantitative bullet points showing bundle reduction and performance gains",
-      "Strong technical summary highlighting TypeScript and React ecosystem leadership"
-    ],
-    weaknesses: [
-      "Could add explicit AWS/GCP/Docker deployment keywords to pass cloud-focused ATS filters",
-      "Ensure all project achievements list team size or scope metrics"
-    ],
-    tailoredSummary: `Versatile Software Engineer with experience engineering scalable web applications, React micro-frontends, and Node.js REST API services.`
-  });
+  const [analysisResult, setAnalysisResult] = useState<ResumeAnalysisResult | null>(null);
 
   const [newSkill, setNewSkill] = useState("");
   const [isSaved, setIsSaved] = useState(false);
@@ -78,17 +62,14 @@ export const ResumeBuilder: React.FC<ResumeBuilderProps> = ({ profile, setProfil
   // Screening Vault Form state
   const [vault, setVault] = useState<ScreeningVault>(
     profile.screeningVault || {
-      workAuthorization: "Authorized to work in US without sponsorship",
-      needsSponsorship: "No",
-      noticePeriod: "2 Weeks",
-      expectedSalary: profile.minSalary ? `$${profile.minSalary.toLocaleString()}` : "$150,000",
+      workAuthorization: "",
+      needsSponsorship: "",
+      noticePeriod: "",
+      expectedSalary: profile.minSalary ? `$${profile.minSalary.toLocaleString()}` : "",
       relocate: false,
-      primaryTechStack: profile.skills ? profile.skills.slice(0, 5).join(", ") : "TypeScript, React, Node.js",
-      bioSummary: `Software engineer specializing in modern web applications.`,
-      customAnswers: {
-        "Why do you want to join?": "Passionate about building intuitive, scalable digital products and driving engineering best practices.",
-        "How many years of experience do you have with TypeScript?": `${profile.yearsOfExperience || 3}+ years of production experience.`
-      }
+      primaryTechStack: profile.skills ? profile.skills.slice(0, 5).join(", ") : "",
+      bioSummary: "",
+      customAnswers: {}
     }
   );
 

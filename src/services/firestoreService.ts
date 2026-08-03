@@ -12,7 +12,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { JobListing, ApplicationRecord, AutoApplyLog, AutoApplyConfig, ApplicationStatus } from "../types";
-import { initialJobs, initialApplications, initialAutoApplyConfig } from "../data/mockData";
+import { initialAutoApplyConfig } from "../data/mockData";
 
 export function sanitizeForFirestore<T>(data: T): T {
   if (data === null || data === undefined) return null as any;
@@ -37,7 +37,7 @@ export const subscribeToJobs = (onUpdate: (jobs: JobListing[]) => void) => {
   const jobsRef = collection(db, "jobs");
   return onSnapshot(jobsRef, (snapshot) => {
     if (snapshot.empty) {
-      onUpdate(initialJobs);
+      onUpdate([]);
       return;
     }
     const jobsList: JobListing[] = [];
@@ -47,7 +47,7 @@ export const subscribeToJobs = (onUpdate: (jobs: JobListing[]) => void) => {
     onUpdate(jobsList);
   }, (err) => {
     console.error("Error listening to jobs:", err);
-    onUpdate(initialJobs);
+    onUpdate([]);
   });
 };
 
@@ -71,23 +71,11 @@ export const subscribeToApplications = (
   onUpdate: (apps: ApplicationRecord[]) => void
 ) => {
   if (!userId) {
-    onUpdate(initialApplications);
+    onUpdate([]);
     return () => {};
   }
 
   const appsRef = collection(db, "users", userId, "applications");
-  
-  // First check if collection is empty, if so seed initial demo applications
-  getDocs(appsRef).then((snap) => {
-    if (snap.empty && initialApplications.length > 0) {
-      const batch = writeBatch(db);
-      initialApplications.forEach((app) => {
-        const ref = doc(db, "users", userId, "applications", app.id);
-        batch.set(ref, sanitizeForFirestore(app));
-      });
-      batch.commit().catch(console.error);
-    }
-  }).catch(console.error);
 
   return onSnapshot(appsRef, (snapshot) => {
     const appsList: ApplicationRecord[] = [];
@@ -97,7 +85,7 @@ export const subscribeToApplications = (
     onUpdate(appsList);
   }, (err) => {
     console.error("Error listening to applications:", err);
-    onUpdate(initialApplications);
+    onUpdate([]);
   });
 };
 

@@ -17,18 +17,15 @@ interface OutreachStudioProps {
 }
 
 export const OutreachStudio: React.FC<OutreachStudioProps> = ({ profile }) => {
-  const [recruiterName, setRecruiterName] = useState("Sarah Jenkins");
-  const [recruiterTitle, setRecruiterTitle] = useState("Senior Technical Recruiter");
-  const [company, setCompany] = useState("Anthropic / Cloud AI Labs");
-  const [jobTitle, setJobTitle] = useState("Senior Full Stack Engineer");
+  const [recruiterName, setRecruiterName] = useState("");
+  const [recruiterTitle, setRecruiterTitle] = useState("Technical Recruiter");
+  const [company, setCompany] = useState("");
+  const [jobTitle, setJobTitle] = useState(profile.targetTitles?.[0] || "Software Engineer");
   const [platform, setPlatform] = useState<"LinkedIn InMail" | "Email">("LinkedIn InMail");
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [generatedOutreach, setGeneratedOutreach] = useState<{ subject: string; message: string } | null>({
-    subject: `Application Follow-up: ${jobTitle} - Alex Rivera`,
-    message: `Hi Sarah,\n\nI hope you're having a great week! I recently submitted my application for the ${jobTitle} role at ${company} and wanted to connect directly.\n\nWith over 5+ years of fullstack TypeScript, React, and Node.js experience, I've built high-throughput web applications and AI tools that directly mirror what your team is building.\n\nWould you be open to a quick 5-minute chat or passing my resume along to the hiring manager?\n\nBest regards,\nAlex Rivera`
-  });
+  const [generatedOutreach, setGeneratedOutreach] = useState<{ subject: string; message: string } | null>(null);
 
   const handleGenerateOutreach = async () => {
     setIsGenerating(true);

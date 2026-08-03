@@ -1,18 +1,54 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // User profile and private subcollections
-    match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-      
-      match /{document=**} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
-      }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
     }
 
-    // Shared Jobs collection
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Jobs Collection (Real listings feed)
     match /jobs/{jobId} {
-      allow read, write: if true;
+      // Anyone can read jobs
+      allow read: if true;
+      // Authenticated users can post or update job listings
+      allow create, update: if isSignedIn();
+      allow delete: if false;
+    }
+
+    // User Documents & Private Sub-collections
+    match /users/{userId} {
+      // Strict ownership for profile data
+      allow read, write: if isOwner(userId);
+
+      // Applications sub-collection
+      match /applications/{appId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // Saved Jobs sub-collection
+      match /saved_jobs/{jobId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // Auto Apply Logs sub-collection
+      match /auto_apply_logs/{logId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // Config sub-collection
+      match /config/{configId} {
+        allow read, write: if isOwner(userId);
+      }
     }
   }
 }

@@ -12,14 +12,11 @@ import {
   doc, 
   getDoc, 
   setDoc, 
-  onSnapshot, 
-  collection, 
-  getDocs, 
-  writeBatch 
+  onSnapshot 
 } from "firebase/firestore";
 import { auth, db, googleProvider } from "../lib/firebase";
 import { CandidateProfile } from "../types";
-import { initialProfile, initialJobs } from "../data/mockData";
+import { initialProfile } from "../data/mockData";
 
 interface AuthContextType {
   user: User | null;
@@ -35,9 +32,18 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const LOCAL_STORAGE_PROFILE_KEY = "hireflow_guest_profile";
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<CandidateProfile>(initialProfile);
+  const [profile, setProfile] = useState<CandidateProfile>(() => {
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_PROFILE_KEY);
+      return saved ? JSON.parse(saved) : initialProfile;
+    } catch {
+      return initialProfile;
+    }
+  });
   const [loading, setLoading] = useState(true);
 
   // Sync or create user profile document in Firestore
@@ -49,13 +55,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const derivedName = customName || firebaseUser.displayName || (firebaseUser.email ? firebaseUser.email.split("@")[0] : "");
       const formattedName = derivedName 
         ? derivedName.split(/[._-]/).map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(" ")
-        : "Guest User";
+        : "";
 
       if (!userSnap.exists()) {
+        // Migrate any local guest profile work into Firestore
+        const guestProfile = (() => {
+          try {
+            const saved = localStorage.getItem(LOCAL_STORAGE_PROFILE_KEY);
+            return saved ? JSON.parse(saved) : null;
+          } catch {
+            return null;
+          }
+        })();
+
         const newProfile: CandidateProfile = {
           ...initialProfile,
-          fullName: formattedName,
-          email: firebaseUser.email || "",
+          ...(guestProfile || {}),
+          fullName: formattedName || guestProfile?.fullName || "",
+          email: firebaseUser.email || guestProfile?.email || "",
           lastUpdated: new Date().toISOString().split("T")[0],
         };
         await setDoc(userRef, newProfile);
@@ -92,7 +109,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setLoading(false);
         return () => unsubscribeProfile();
       } else {
-        setProfile(initialProfile);
+        // Guest mode - load from local storage
+        try {
+          const saved = localStorage.getItem(LOCAL_STORAGE_PROFILE_KEY);
+          if (saved) setProfile(JSON.parse(saved));
+        } catch {}
         setLoading(false);
       }
     });
@@ -120,7 +141,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signInDemoUser = async () => {
     setLoading(true);
     const res = await signInAnonymously(auth);
-    await ensureUserProfile(res.user, "Alex Rivera (Demo Account)");
+    await ensureUserProfile(res.user, "Guest User");
   };
 
   const logout = async () => {
@@ -135,9 +156,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     setProfile(updated);
 
+    try {
+      localStorage.setItem(LOCAL_STORAGE_PROFILE_KEY, JSON.stringify(updated));
+    } catch {}
+
     if (user) {
-      const userRef = doc(db, "users", user.uid);
-      await setDoc(userRef, updated, { merge: true });
+      try {
+        const userRef = doc(db, "users", user.uid);
+        await setDoc(userRef, updated, { merge: true });
+      } catch (err) {
+        console.error("Failed to sync profile to Firestore:", err);
+      }
     }
   };
 

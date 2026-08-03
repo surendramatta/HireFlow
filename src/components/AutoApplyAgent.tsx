@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 import { AutoApplyConfig, AutoApplyLog, JobListing, ApplicationRecord, CandidateProfile } from "../types";
+import { PlaywrightWorkflowModal } from "./PlaywrightWorkflowModal";
+import { BookmarkletModal } from "./BookmarkletModal";
 import { 
   Bot, 
   Play, 
@@ -20,7 +22,8 @@ import {
   FileCheck,
   Eye,
   Building2,
-  List
+  List,
+  Code
 } from "lucide-react";
 
 interface AutoApplyAgentProps {
@@ -31,8 +34,8 @@ interface AutoApplyAgentProps {
   jobs: JobListing[];
   applications: ApplicationRecord[];
   profile: CandidateProfile;
-  onApplyJob: (job: JobListing, tailoredCoverLetter?: string) => Promise<void>;
-  onBatchAutoApply: (count: number) => void;
+  onApplyJob: (job: JobListing, tailoredCoverLetter?: string, screeningAnswers?: Record<string, string>) => void | Promise<void>;
+  onBatchAutoApply?: (count: number) => void;
   toggleAutopilot: () => void;
 }
 
@@ -50,8 +53,10 @@ export const AutoApplyAgent: React.FC<AutoApplyAgentProps> = ({
 }) => {
   const [isRunningBatch, setIsRunningBatch] = useState(false);
   const [batchCount, setBatchCount] = useState<number>(3);
-  const [activeTab, setActiveTab] = useState<"logs" | "settings">("logs");
+  const [activeTab, setActiveTab] = useState<"logs" | "settings" | "playwright">("logs");
   const [previewCoverLetter, setPreviewCoverLetter] = useState<{ company: string; role: string; text: string } | null>(null);
+  const [selectedPlaywrightJob, setSelectedPlaywrightJob] = useState<JobListing | null>(null);
+  const [showBookmarkletModal, setShowBookmarkletModal] = useState(false);
 
   const [agentProgress, setAgentProgress] = useState<{
     currentJobIndex: number;
@@ -100,11 +105,30 @@ export const AutoApplyAgent: React.FC<AutoApplyAgentProps> = ({
         currentMatchScore: job.matchScore,
         currentPhase: "matching",
       });
-      await new Promise((r) => setTimeout(r, 600));
+      await new Promise((r) => setTimeout(r, 500));
 
-      // Phase 2: Gemini Cover Letter Generation
+      // Phase 2: Gemini Tailor Resume & Cover Letter Generation
       setAgentProgress((prev) => prev ? { ...prev, currentPhase: "cover_letter" } : null);
       let generatedLetter = "";
+      let tailoredBullets: string[] = [];
+
+      try {
+        // Tailor resume bullet points for job description
+        const tailorRes = await fetch("/api/ai/tailor-resume", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            resumeText: profile.resumeText || profile.experiences?.map(e => `${e.role} at ${e.company}: ${e.description}`).join("\n") || "Software engineer experience",
+            jobDescription: `${job.title} at ${job.company}. ${job.description} Requirements: ${job.requirements?.join(" ")}`,
+            jobTitle: job.title,
+            jobCompany: job.company,
+          }),
+        });
+        const tailorData = await tailorRes.json();
+        tailoredBullets = tailorData.tailoredBullets || [];
+      } catch (err) {
+        console.warn("Resume tailoring error:", err);
+      }
 
       if (autoApplyConfig.autoGenerateCoverLetter) {
         try {
@@ -131,18 +155,35 @@ export const AutoApplyAgent: React.FC<AutoApplyAgentProps> = ({
       }
 
       setAgentProgress((prev) => prev ? { ...prev, generatedLetterSnippet: generatedLetter.slice(0, 180) + "..." } : null);
-      await new Promise((r) => setTimeout(r, 700));
+      await new Promise((r) => setTimeout(r, 600));
 
       // Phase 3: Recruiter Screening Answers
+      let screeningAnswers: Record<string, string> = {};
       if (autoApplyConfig.autoAnswerScreening) {
         setAgentProgress((prev) => prev ? { ...prev, currentPhase: "screening" } : null);
-        await new Promise((r) => setTimeout(r, 500));
+        try {
+          const res = await fetch("/api/ai/answer-screening-questions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              questions: job.requirements?.slice(0, 3) || ["Work authorization status?", "Expected salary range?", "Notice period?"],
+              candidateProfile: profile,
+              jobTitle: job.title,
+              jobCompany: job.company,
+            }),
+          });
+          const data = await res.json();
+          screeningAnswers = data.answers || {};
+        } catch (err) {
+          console.warn("Screening answer error:", err);
+        }
+        await new Promise((r) => setTimeout(r, 400));
       }
 
-      // Phase 4: Submitting & Saving
+      // Phase 4: Submitting & Saving Record
       setAgentProgress((prev) => prev ? { ...prev, currentPhase: "submitting" } : null);
-      await onApplyJob(job, generatedLetter);
-      await new Promise((r) => setTimeout(r, 600));
+      await onApplyJob(job, generatedLetter, screeningAnswers);
+      await new Promise((r) => setTimeout(r, 500));
     }
 
     setAgentProgress({
@@ -323,20 +364,49 @@ export const AutoApplyAgent: React.FC<AutoApplyAgentProps> = ({
         </div>
 
         <div className="bg-slate-900/80 rounded-xl p-4 border border-slate-800">
-          <div className="text-xs text-slate-400 font-medium">Gemini Cover Letter AI</div>
-          <div className="text-xl font-black text-cyan-400 mt-1">
-            {autoApplyConfig.autoGenerateCoverLetter ? "ACTIVE" : "OFF"}
+          <div className="text-xs text-slate-400 font-medium">Auto-Answer Vault</div>
+          <div className="text-xl font-black text-emerald-400 mt-1">
+            {autoApplyConfig.autoAnswerScreening ? "Active" : "Off"}
           </div>
-          <div className="text-[10px] text-slate-400 mt-1">Tailored for each vacancy</div>
+          <div className="text-[10px] text-slate-400 mt-1">Work Auth, Salary, Notice Period</div>
         </div>
 
-        <div className="bg-slate-900/80 rounded-xl p-4 border border-slate-800">
-          <div className="text-xs text-slate-400 font-medium">Screening Vault Auto-Solver</div>
-          <div className="text-xl font-black text-amber-400 mt-1">
-            {autoApplyConfig.autoAnswerScreening ? "AUTO-SOLVE" : "OFF"}
-          </div>
-          <div className="text-[10px] text-slate-400 mt-1">Pre-fills recruiter forms</div>
+        <div className="bg-slate-900/80 rounded-xl p-4 border border-slate-800 flex flex-col justify-between">
+          <div className="text-xs text-slate-400 font-medium">1-Click Form Filler</div>
+          <button
+            onClick={() => setShowBookmarkletModal(true)}
+            className="mt-2 px-3 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs rounded-lg transition shadow-md shadow-emerald-500/20 flex items-center justify-center space-x-1.5"
+          >
+            <Zap className="w-3.5 h-3.5 fill-slate-950" />
+            <span>Launch Form Filler</span>
+          </button>
         </div>
+      </div>
+
+      {/* 1-Click Bookmarklet Form-Filler Banner */}
+      <div className="bg-slate-950 border border-emerald-500/40 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-lg shadow-emerald-950/20">
+        <div className="flex items-center space-x-3">
+          <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 shrink-0">
+            <Zap className="w-6 h-6 fill-emerald-400/20" />
+          </div>
+          <div>
+            <div className="flex items-center space-x-2">
+              <h4 className="text-sm font-extrabold text-white">HireFlow 1-Click ATS Auto-Fill Bookmarklet</h4>
+              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">REAL FORM FILLER</span>
+            </div>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Auto-fill contact details, tailored cover letter & screening answers on external ATS application pages (Greenhouse, Lever, Ashby, Workday) in 1 second.
+            </p>
+          </div>
+        </div>
+
+        <button
+          onClick={() => setShowBookmarkletModal(true)}
+          className="shrink-0 px-4 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl transition shadow-lg shadow-emerald-500/20 flex items-center space-x-2"
+        >
+          <Zap className="w-4 h-4 fill-slate-950" />
+          <span>Get Auto-Fill Bookmarklet</span>
+        </button>
       </div>
 
       {/* Navigation Sub-Tabs */}
@@ -363,6 +433,18 @@ export const AutoApplyAgent: React.FC<AutoApplyAgentProps> = ({
         >
           <Settings className="w-4 h-4 text-indigo-400" />
           <span>Agent Rules & Target Thresholds</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab("playwright")}
+          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
+            activeTab === "playwright"
+              ? "bg-slate-800 text-white border border-slate-700 shadow"
+              : "text-slate-400 hover:text-white"
+          }`}
+        >
+          <Code className="w-4 h-4 text-amber-400" />
+          <span>Playwright Workflows & Scripts</span>
         </button>
       </div>
 
@@ -441,7 +523,7 @@ export const AutoApplyAgent: React.FC<AutoApplyAgentProps> = ({
             )}
           </div>
         </div>
-      ) : (
+      ) : activeTab === "settings" ? (
         /* Agent Rules & Settings Tab */
         <div className="bg-slate-900/80 rounded-2xl p-6 border border-slate-800 space-y-6">
           <h2 className="text-base font-bold text-white flex items-center space-x-2">
@@ -519,6 +601,75 @@ export const AutoApplyAgent: React.FC<AutoApplyAgentProps> = ({
             </div>
           </div>
         </div>
+      ) : (
+        /* PLAYWRIGHT WORKFLOW TAB */
+        <div className="bg-slate-950 rounded-2xl p-5 border border-slate-800 space-y-6">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+            <div>
+              <h3 className="text-sm font-bold text-white flex items-center space-x-2">
+                <Code className="w-4 h-4 text-amber-400" />
+                <span>Playwright Browser Automation Scripts</span>
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Generate and run full Playwright auto-apply scripts (Node.js/TypeScript & Python) configured with your resume and cover letter.
+              </p>
+            </div>
+
+            <div className="px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-mono">
+              Supported ATS: Greenhouse, Lever, Ashby, Workday, LinkedIn
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+              Select a job to run or view Playwright workflow:
+            </h4>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {(highAffinityJobs.length > 0 ? highAffinityJobs : unappliedJobs).slice(0, 6).map((job) => (
+                <div
+                  key={job.id}
+                  className="bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-xl p-4 flex flex-col justify-between space-y-3 transition"
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-white truncate">{job.title}</span>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 font-mono">
+                        {job.matchScore}% Match
+                      </span>
+                    </div>
+                    <div className="text-xs text-slate-400 flex items-center space-x-2">
+                      <Building2 className="w-3.5 h-3.5 text-slate-500" />
+                      <span>{job.company}</span>
+                      <span>• {job.platform}</span>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => setSelectedPlaywrightJob(job)}
+                    className="w-full flex items-center justify-center space-x-2 px-3 py-2 bg-gradient-to-r from-amber-500/20 to-emerald-500/20 hover:from-amber-500/30 hover:to-emerald-500/30 border border-amber-500/30 text-amber-200 rounded-lg text-xs font-bold transition shadow"
+                  >
+                    <Bot className="w-4 h-4 text-emerald-400" />
+                    <span>Launch Playwright Workflow for {job.company}</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Render Playwright Workflow Modal */}
+      {selectedPlaywrightJob && (
+        <PlaywrightWorkflowModal
+          job={selectedPlaywrightJob}
+          profile={profile}
+          onClose={() => setSelectedPlaywrightJob(null)}
+          onConfirmApply={async (job, coverLetter, answers) => {
+            await onApplyJob(job, coverLetter, answers);
+            setSelectedPlaywrightJob(null);
+          }}
+        />
       )}
 
       {/* Cover Letter Modal View */}
@@ -556,6 +707,14 @@ export const AutoApplyAgent: React.FC<AutoApplyAgentProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Render 1-Click Bookmarklet Form-Filler Modal */}
+      {showBookmarkletModal && (
+        <BookmarkletModal
+          profile={profile}
+          onClose={() => setShowBookmarkletModal(false)}
+        />
       )}
     </div>
   );
