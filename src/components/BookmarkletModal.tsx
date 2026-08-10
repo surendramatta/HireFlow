@@ -4,6 +4,7 @@ import {
   buildAutofillBookmarklet,
   buildAutofillPayload,
 } from "../lib/autofillBookmarklet";
+import { resolveApplyUrl } from "../lib/applyUrl";
 import {
   Zap,
   Copy,
@@ -13,6 +14,7 @@ import {
   Sparkles,
   ShieldCheck,
   FileText,
+  AlertCircle,
 } from "lucide-react";
 
 interface BookmarkletModalProps {
@@ -49,14 +51,16 @@ export const BookmarkletModal: React.FC<BookmarkletModalProps> = ({
   };
 
   const handleOpenPortal = () => {
+    const targetUrl = resolveApplyUrl(job || {});
+    if (!targetUrl) {
+      alert(
+        "This job has no valid apply link. Search live jobs again for a real Greenhouse/Lever/Ashby URL."
+      );
+      return;
+    }
     if (coverLetter) {
       navigator.clipboard.writeText(coverLetter).catch(() => {});
     }
-    const targetUrl =
-      job?.applyUrl ||
-      (job
-        ? `https://boards.greenhouse.io/${job.company.toLowerCase().replace(/\s+/g, "")}/jobs/101`
-        : "https://boards.greenhouse.io");
     window.open(targetUrl, "_blank", "noopener,noreferrer");
   };
 
@@ -144,6 +148,13 @@ export const BookmarkletModal: React.FC<BookmarkletModalProps> = ({
             </div>
           </div>
 
+          {job && !resolveApplyUrl(job) && (
+            <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-3 text-xs text-rose-300 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>No valid apply URL on this listing — opening the portal is disabled until you pick a live job.</span>
+            </div>
+          )}
+
           {job && (
             <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-3">
               <div className="flex items-center justify-between text-xs font-bold text-slate-300">
@@ -164,6 +175,11 @@ export const BookmarkletModal: React.FC<BookmarkletModalProps> = ({
                     Email: <strong className="text-slate-200">{profile.email || "—"}</strong>
                   </span>
                 </div>
+                {resolveApplyUrl(job) && (
+                  <p className="text-[11px] text-slate-400 truncate">
+                    Apply URL: <span className="text-indigo-300">{resolveApplyUrl(job)}</span>
+                  </p>
+                )}
                 {coverLetter && (
                   <p className="text-slate-300 text-[11px] line-clamp-3 italic bg-slate-950 p-2 rounded border border-slate-800/60">
                     &ldquo;{coverLetter}&rdquo;
@@ -197,7 +213,8 @@ export const BookmarkletModal: React.FC<BookmarkletModalProps> = ({
             {job && (
               <button
                 onClick={handleOpenPortal}
-                className="flex items-center space-x-2 px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-xl transition shadow-lg shadow-emerald-500/20"
+                disabled={!resolveApplyUrl(job)}
+                className="flex items-center space-x-2 px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-bold text-xs rounded-xl transition shadow-lg shadow-emerald-500/20"
               >
                 <ExternalLink className="w-4 h-4" />
                 <span>Open Job Portal</span>

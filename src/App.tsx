@@ -4,6 +4,7 @@ import { initialAutoApplyConfig } from "./data/mockData";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { postJson } from "./lib/apiClient";
 import { enrichJobWithMatch, withJobDefaults } from "./lib/jobMatching";
+import { isValidApplyUrl } from "./lib/applyUrl";
 import { 
   subscribeToJobs, 
   subscribeToApplications, 
@@ -16,7 +17,8 @@ import {
   toggleSaveJobInDb, 
   addAutoApplyLogToDb, 
   updateAutoApplyConfigInDb, 
-  addCustomJobToDb 
+  addCustomJobToDb,
+  deleteJobFromDb,
 } from "./services/firestoreService";
 
 import { Navbar } from "./components/Navbar";
@@ -129,11 +131,11 @@ function MainAppContent() {
           });
           if (res.jobs && res.jobs.length > 0) {
             for (const j of res.jobs.slice(0, 15)) {
-              const { id: _ignored, ...jobPayload } = j;
+              if (!isValidApplyUrl(j.applyUrl)) continue;
               await addCustomJobToDb(
                 withJobDefaults({
-                  ...jobPayload,
-                  ...enrichJobWithMatch(jobPayload, profile),
+                  ...j,
+                  ...enrichJobWithMatch(j, profile),
                 })
               );
             }
@@ -403,11 +405,15 @@ function MainAppContent() {
     }
   };
 
-  const handleAddCustomJob = async (newJobData: Omit<JobListing, "id">) => {
+  const handleAddCustomJob = async (newJobData: Omit<JobListing, "id"> & { id?: string }) => {
     const enriched = {
       ...withJobDefaults(newJobData),
       ...enrichJobWithMatch(newJobData, profile),
     };
+    if (!isValidApplyUrl(enriched.applyUrl)) {
+      // Still allow manual imports, but keep empty applyUrl rather than inventing a 404 URL
+      enriched.applyUrl = enriched.applyUrl?.startsWith("http") ? enriched.applyUrl : "";
+    }
     const newId = await addCustomJobToDb(enriched);
     return newId;
   };

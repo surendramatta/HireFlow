@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { JobListing, CandidateProfile } from "../types";
+import { resolveApplyUrl } from "../lib/applyUrl";
 import { 
   Bot, 
   Code, 
@@ -72,7 +73,7 @@ export const PlaywrightWorkflowModal: React.FC<PlaywrightWorkflowModalProps> = (
           body: JSON.stringify({
             jobTitle: job.title,
             jobCompany: job.company,
-            applyUrl: job.applyUrl || `https://boards.greenhouse.io/${job.company.toLowerCase().replace(/\s+/g, "")}/jobs/101`,
+            applyUrl: resolveApplyUrl(job) || job.applyUrl || "",
             platform: job.platform || "Greenhouse",
             candidateProfile: profile,
             coverLetter,
@@ -135,7 +136,11 @@ export const PlaywrightWorkflowModal: React.FC<PlaywrightWorkflowModalProps> = (
     }
 
     // 2. Open live official job application portal in a new browser tab
-    const urlToOpen = job.applyUrl || `https://boards.greenhouse.io/${job.company.toLowerCase().replace(/\s+/g, "")}/jobs/101`;
+    const urlToOpen = resolveApplyUrl(job);
+    if (!urlToOpen) {
+      alert("No valid apply URL for this job. Search live jobs for a real career-page link.");
+      return;
+    }
     window.open(urlToOpen, "_blank", "noopener,noreferrer");
 
     // 3. Confirm submission record in database state

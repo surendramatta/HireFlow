@@ -6,6 +6,7 @@ import {
   buildAutofillBookmarklet,
   buildAutofillPayload,
 } from "../lib/autofillBookmarklet";
+import { resolveApplyUrl } from "../lib/applyUrl";
 import {
   X,
   ExternalLink,
@@ -48,6 +49,7 @@ export const AssistedApplyModal: React.FC<Props> = ({
   const [autofillLaunched, setAutofillLaunched] = useState<boolean>(false);
   const [showPlaywrightModal, setShowPlaywrightModal] = useState<boolean>(false);
   const [bookmarkCopied, setBookmarkCopied] = useState(false);
+  const [urlError, setUrlError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!job) return;
@@ -144,9 +146,7 @@ export const AssistedApplyModal: React.FC<Props> = ({
 
   if (!job) return null;
 
-  const applyUrl =
-    job.applyUrl ||
-    `https://boards.greenhouse.io/${job.company.toLowerCase().replace(/\s+/g, "")}/jobs/101`;
+  const applyUrl = resolveApplyUrl(job);
 
   const handleCopyCover = () => {
     navigator.clipboard.writeText(coverLetter);
@@ -175,6 +175,14 @@ export const AssistedApplyModal: React.FC<Props> = ({
 
   /** Open ATS in a new tab, stage materials, save Ready to Submit — user finishes if blocked. */
   const handleOpenTabAndAutofill = async () => {
+    setUrlError(null);
+    if (!applyUrl) {
+      setUrlError(
+        "This job has no valid apply link (expired or fake URL). Use Find Jobs → Search Live Jobs for real Greenhouse/Lever/Ashby openings."
+      );
+      return;
+    }
+
     if (coverLetter) {
       navigator.clipboard.writeText(coverLetter).catch(() => {});
     }
@@ -189,7 +197,7 @@ export const AssistedApplyModal: React.FC<Props> = ({
   };
 
   const handleConfirmSubmission = () => {
-    if (!portalOpened) {
+    if (!portalOpened && applyUrl) {
       window.open(applyUrl, "_blank", "noopener,noreferrer");
     }
     onConfirmSubmitted(job, coverLetter, screeningAnswers);
@@ -239,6 +247,22 @@ export const AssistedApplyModal: React.FC<Props> = ({
           </div>
         )}
 
+        {urlError && (
+          <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-lg text-rose-300 text-xs flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{urlError}</span>
+          </div>
+        )}
+
+        {!applyUrl && !urlError && (
+          <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-lg text-rose-300 text-xs flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>
+              No valid career-page URL on this listing. It may be stale data — search live jobs again for a real apply link.
+            </span>
+          </div>
+        )}
+
         {/* Primary: Open tab + autofill coach */}
         <div className="bg-gradient-to-r from-emerald-950/70 via-slate-900 to-indigo-950/50 border border-emerald-500/30 rounded-xl p-4 space-y-3">
           <div className="flex items-start gap-3">
@@ -258,7 +282,7 @@ export const AssistedApplyModal: React.FC<Props> = ({
 
           <button
             onClick={handleOpenTabAndAutofill}
-            disabled={generating}
+            disabled={generating || !applyUrl}
             className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-bold text-sm rounded-xl transition shadow-lg shadow-emerald-500/25"
           >
             {generating ? (

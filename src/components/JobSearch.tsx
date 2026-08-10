@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { JobListing, CandidateProfile, ApplicationRecord, TabType } from "../types";
 import { JobDetailModal } from "./JobDetailModal";
+import { isValidApplyUrl } from "../lib/applyUrl";
 import { 
   Search, 
   Filter, 
@@ -24,7 +25,8 @@ import {
   Globe,
   Loader2,
   Bot,
-  Maximize2
+  Maximize2,
+  AlertTriangle
 } from "lucide-react";
 
 interface JobSearchProps {
@@ -33,7 +35,7 @@ interface JobSearchProps {
   applications: ApplicationRecord[];
   onApplyJob: (job: JobListing, tailoredCoverLetter?: string) => void;
   onSaveJob: (job: JobListing) => void;
-  onAddCustomJob?: (job: Omit<JobListing, "id">) => Promise<string>;
+  onAddCustomJob?: (job: Omit<JobListing, "id"> & { id?: string }) => Promise<string>;
   selectedJob: JobListing | null;
   setSelectedJob: (job: JobListing | null) => void;
   setActiveTab: (tab: TabType) => void;
@@ -126,10 +128,11 @@ export const JobSearch: React.FC<JobSearchProps> = ({
         const liveJobs: JobListing[] = await res.json();
         if (Array.isArray(liveJobs) && liveJobs.length > 0 && onAddCustomJob) {
           for (const j of liveJobs) {
-            const { id, ...jobData } = j;
-            await onAddCustomJob(jobData);
+            if (!isValidApplyUrl(j.applyUrl)) continue;
+            // Keep board id so Firestore upserts the same posting
+            await onAddCustomJob(j);
           }
-          setJobs?.(liveJobs);
+          setJobs?.(liveJobs.filter((j) => isValidApplyUrl(j.applyUrl)));
         }
       }
     } catch (err) {
@@ -258,6 +261,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({
 
   const [resumeFilterOnly, setResumeFilterOnly] = useState(false);
   const [hideAppliedFilter, setHideAppliedFilter] = useState<boolean>(true);
+  const [requireApplyUrl, setRequireApplyUrl] = useState(true);
 
   const isApplied = (job: JobListing | string) => {
     if (!job) return false;
@@ -296,8 +300,9 @@ export const JobSearch: React.FC<JobSearchProps> = ({
       const matchesMatchScore = job.matchScore >= minMatchFilter;
 
       const matchesResumeFilter = !resumeFilterOnly || ((job.matchingSkills || []).length > 0 || job.matchScore >= 80);
+      const matchesApplyUrl = !requireApplyUrl || isValidApplyUrl(job.applyUrl);
 
-      return matchesAppliedFilter && matchesQuery && matchesPlatform && matchesRemote && matchesMatchScore && matchesResumeFilter;
+      return matchesAppliedFilter && matchesQuery && matchesPlatform && matchesRemote && matchesMatchScore && matchesResumeFilter && matchesApplyUrl;
     })
     .sort((a, b) => b.matchScore - a.matchScore);
 
@@ -539,6 +544,20 @@ export const JobSearch: React.FC<JobSearchProps> = ({
             </button>
 
             <button
+              type="button"
+              onClick={() => setRequireApplyUrl(!requireApplyUrl)}
+              className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition flex items-center space-x-1.5 cursor-pointer ${
+                requireApplyUrl
+                  ? "bg-cyan-500/20 border-cyan-500/50 text-cyan-300"
+                  : "bg-slate-950/80 border-slate-700 text-slate-400 hover:text-slate-200"
+              }`}
+              title="Hide listings without a working career-page apply link"
+            >
+              <ExternalLink className={`w-3.5 h-3.5 ${requireApplyUrl ? "text-cyan-400" : "text-slate-400"}`} />
+              <span>Valid Apply Link Only</span>
+            </button>
+
+            <button
               onClick={() => setResumeFilterOnly(!resumeFilterOnly)}
               className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition flex items-center space-x-1.5 ${
                 resumeFilterOnly
@@ -777,7 +796,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({
                       <span className="hidden sm:inline">Full Description</span>
                     </button>
 
-                    {activeJob.applyUrl && (
+                    {isValidApplyUrl(activeJob.applyUrl) && (
                       <a
                         href={activeJob.applyUrl}
                         target="_blank"
@@ -788,6 +807,15 @@ export const JobSearch: React.FC<JobSearchProps> = ({
                         <ExternalLink className="w-3.5 h-3.5 text-indigo-400" />
                         <span className="hidden md:inline">Open Career URL</span>
                       </a>
+                    )}
+                    {!isValidApplyUrl(activeJob.applyUrl) && (
+                      <span
+                        className="px-3 py-2 rounded-xl bg-rose-500/10 text-rose-300 text-[11px] font-bold border border-rose-500/30 flex items-center gap-1.5"
+                        title="This listing has no working apply link"
+                      >
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                        Broken apply link
+                      </span>
                     )}
 
                     <button
