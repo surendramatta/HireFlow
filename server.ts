@@ -341,9 +341,10 @@ app.get("/api/health", (_req, res) => {
 // REAL JOB BOARD SEARCH (Greenhouse, Lever, Ashby - No fake/AI-guessed jobs)
 app.post("/api/jobs/search", async (req, res) => {
   try {
-    const { query = "", location = "", remoteOnly = false } = req.body;
+    const { query = "", location = "", remoteOnly = false, targetSkills = [] } = req.body;
     const queryLower = (query || "").toLowerCase().trim();
     const locationLower = (location || "").toLowerCase().trim();
+    const candidateSkillsLower = (targetSkills || []).map((s: string) => s.toLowerCase());
 
     const promises = COMPANY_BOARDS.map((board) => {
       if (board.source === "greenhouse") return fetchGreenhouse(board);
@@ -383,6 +384,28 @@ app.post("/api/jobs/search", async (req, res) => {
       }
 
       return true;
+    }).map((job) => {
+      const matchingSkills = job.skillsRequired.filter((s) =>
+        candidateSkillsLower.includes(s.toLowerCase())
+      );
+      const missingSkills = job.skillsRequired.filter(
+        (s) => !candidateSkillsLower.includes(s.toLowerCase())
+      );
+      let matchScore = 78;
+      if (candidateSkillsLower.length > 0 && job.skillsRequired.length > 0) {
+        matchScore = Math.min(
+          98,
+          Math.max(68, Math.round((matchingSkills.length / job.skillsRequired.length) * 100) + 20)
+        );
+      }
+      return {
+        ...job,
+        matchScore,
+        matchingSkills,
+        missingSkills,
+        companySize: job.companySize || "Unknown",
+        logoUrl: job.logoUrl || "",
+      };
     });
 
     return res.json({
@@ -449,12 +472,24 @@ app.post("/api/ai/search-real-jobs", async (req, res) => {
       return true;
     }).map((job) => {
       // Calculate dynamic candidate match score
+      const matchingSkills = job.skillsRequired.filter((s) =>
+        candidateSkillsLower.includes(s.toLowerCase())
+      );
+      const missingSkills = job.skillsRequired.filter(
+        (s) => !candidateSkillsLower.includes(s.toLowerCase())
+      );
       let matchScore = 78;
       if (candidateSkillsLower.length > 0 && job.skillsRequired.length > 0) {
-        const matches = job.skillsRequired.filter((s) => candidateSkillsLower.includes(s.toLowerCase()));
-        matchScore = Math.min(98, Math.max(68, Math.round((matches.length / job.skillsRequired.length) * 100) + 20));
+        matchScore = Math.min(98, Math.max(68, Math.round((matchingSkills.length / job.skillsRequired.length) * 100) + 20));
       }
-      return { ...job, matchScore };
+      return {
+        ...job,
+        matchScore,
+        matchingSkills,
+        missingSkills,
+        companySize: job.companySize || "Unknown",
+        logoUrl: job.logoUrl || "",
+      };
     });
 
     // Return direct array for compatibility with JobSearch.tsx
@@ -992,9 +1027,9 @@ function generatePlaywrightScripts(params: {
   const lastName = nameParts.slice(1).join(" ") || "Doe";
   const email = candidateProfile?.email || "jane.doe@example.com";
   const phone = candidateProfile?.phone || "+1 (555) 019-2834";
-  const linkedin = candidateProfile?.linkedin || "https://linkedin.com/in/janedoe";
-  const github = candidateProfile?.github || "https://github.com/janedoe";
-  const portfolio = candidateProfile?.portfolio || "https://janedoe.dev";
+  const linkedin = candidateProfile?.linkedin || candidateProfile?.linkedInUrl || "";
+  const github = candidateProfile?.github || candidateProfile?.gitHubUrl || "";
+  const portfolio = candidateProfile?.portfolio || candidateProfile?.portfolioUrl || "";
 
   // Escape strings for code template safely
   const safeTitle = jobTitle.replace(/"/g, '\\"');
@@ -1139,7 +1174,7 @@ Platform: ${platform}
 URL: ${safeUrl}
 """
 
-async function_run():
+async def function_run():
     async with async_playwright() as p:
         print("🚀 Launching Playwright Python Browser...")
         browser = await p.chromium.launch(headless=False, slow_mo=150)
@@ -1154,7 +1189,7 @@ async function_run():
         if await page.locator("input[name*='first_name']").is_visible():
             await page.fill("input[name*='first_name']", "${firstName}")
             await page.fill("input[name*='last_name']", "${lastName}")
-        
+
         await page.fill("input[type='email']", "${email}")
         await page.fill("input[type='tel']", "${phone}")
 

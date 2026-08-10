@@ -40,7 +40,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const safeApps = applications || [];
   const safeJobs = jobs || [];
 
-  const totalApplied = safeApps.filter((a) => a.status !== "saved").length;
+  const totalApplied = safeApps.filter((a) =>
+    ["applied", "screening", "interviewing", "offer", "rejected"].includes(a.status)
+  ).length;
+  const readyToSubmitCount = safeApps.filter((a) => a.status === "ready_to_submit").length;
   const interviewingCount = safeApps.filter((a) => a.status === "interviewing").length;
   const screeningCount = safeApps.filter((a) => a.status === "screening").length;
   const offerCount = safeApps.filter((a) => a.status === "offer").length;
@@ -134,6 +137,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
               style={{ width: `${Math.min(100, (autoApplyConfig.appliedToday / autoApplyConfig.dailyLimit) * 100)}%` }} 
             />
           </div>
+          {readyToSubmitCount > 0 && (
+            <div className="mt-2 text-[11px] text-violet-300 font-medium">
+              {readyToSubmitCount} ready to submit
+            </div>
+          )}
         </div>
 
         <div className="bg-slate-900/80 rounded-xl p-4 border border-slate-800 hover:border-slate-700 transition">

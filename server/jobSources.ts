@@ -4,6 +4,7 @@ export interface StandardJobListing {
   id: string;
   title: string;
   company: string;
+  logoUrl?: string;
   location: string;
   isRemote: boolean;
   type: string;
@@ -13,9 +14,12 @@ export interface StandardJobListing {
   platform: string;
   matchScore: number;
   skillsRequired: string[];
+  matchingSkills?: string[];
+  missingSkills?: string[];
   description: string;
   requirements: string[];
   benefits: string[];
+  companySize?: string;
   applyUrl: string;
 }
 
@@ -23,14 +27,17 @@ export interface StandardJobListing {
 function cleanHtml(html: string): string {
   if (!html) return "";
   return html
+    // Greenhouse encodes HTML entities in job.content
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&amp;/gi, "&")
+    .replace(/&nbsp;/gi, " ")
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/p>/gi, "\n\n")
     .replace(/<\/li>/gi, "\n")
     .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
@@ -71,6 +78,7 @@ export async function fetchGreenhouse(board: CompanyBoard): Promise<StandardJobL
         id: `greenhouse-${board.slug}-${job.id}`,
         title: job.title || "Software Engineer",
         company: board.name,
+        logoUrl: "",
         location: job.location?.name || "Remote",
         isRemote,
         type: "Full-time",
@@ -80,9 +88,12 @@ export async function fetchGreenhouse(board: CompanyBoard): Promise<StandardJobL
         platform: "Greenhouse",
         matchScore: 0,
         skillsRequired: skills.length > 0 ? skills : ["TypeScript", "React", "Node.js"],
+        matchingSkills: [],
+        missingSkills: [],
         description: plainDesc.slice(0, 1200) || `${job.title} position at ${board.name}.`,
         requirements: ["Experience with modern web software development", "Strong technical problem-solving abilities"],
         benefits: [],
+        companySize: "Unknown",
         applyUrl: job.absolute_url // Real apply URL directly from Greenhouse
       };
     });
@@ -111,6 +122,7 @@ export async function fetchLever(board: CompanyBoard): Promise<StandardJobListin
         id: `lever-${board.slug}-${job.id}`,
         title: job.text || "Software Engineer",
         company: board.name,
+        logoUrl: "",
         location: job.categories?.location || "Remote",
         isRemote,
         type: job.categories?.commitment || "Full-time",
@@ -120,9 +132,12 @@ export async function fetchLever(board: CompanyBoard): Promise<StandardJobListin
         platform: "Lever",
         matchScore: 0,
         skillsRequired: skills.length > 0 ? skills : ["TypeScript", "React", "Node.js"],
+        matchingSkills: [],
+        missingSkills: [],
         description: descriptionText.slice(0, 1200) || `${job.text} position at ${board.name}.`,
         requirements: ["Hands-on engineering experience in software systems", "Collaborative mindset"],
         benefits: [],
+        companySize: "Unknown",
         applyUrl: job.hostedUrl || job.applyUrl // Real apply URL directly from Lever
       };
     });
@@ -152,6 +167,7 @@ export async function fetchAshby(board: CompanyBoard): Promise<StandardJobListin
         id: `ashby-${board.slug}-${job.id}`,
         title: job.title || "Software Engineer",
         company: board.name,
+        logoUrl: "",
         location: job.location || "Remote",
         isRemote,
         type: job.employmentType || "Full-time",
@@ -161,9 +177,12 @@ export async function fetchAshby(board: CompanyBoard): Promise<StandardJobListin
         platform: "Ashby",
         matchScore: 0,
         skillsRequired: skills.length > 0 ? skills : ["TypeScript", "React", "Node.js"],
+        matchingSkills: [],
+        missingSkills: [],
         description: desc.slice(0, 1200) || `${job.title} position at ${board.name}.`,
         requirements: ["Proficiency in software engineering practices", "High ownership and initiative"],
         benefits: [],
+        companySize: "Unknown",
         applyUrl: job.jobUrl // Real apply URL directly from Ashby
       };
     });

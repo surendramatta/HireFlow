@@ -19,7 +19,8 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ applications = [],
   const safeApps = applications || [];
   const safeJobs = jobs || [];
 
-  const totalApps = safeApps.length;
+  const totalApps = safeApps.filter((a) => a.status !== "saved" && a.status !== "ready_to_submit").length;
+  const readyApps = safeApps.filter((a) => a.status === "ready_to_submit").length;
   const screeningApps = safeApps.filter((a) => a.status === "screening").length;
   const interviewingApps = safeApps.filter((a) => a.status === "interviewing" || a.status === "offer").length;
   const offerApps = safeApps.filter((a) => a.status === "offer").length;
@@ -48,6 +49,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ applications = [],
 
   // Group applications by status for real funnel chart
   const funnelChartData = [
+    { name: "Ready", count: readyApps, fill: "#8b5cf6" },
     { name: "Applied", count: totalApps, fill: "#6366f1" },
     { name: "Screening", count: screeningApps, fill: "#f59e0b" },
     { name: "Interviewing", count: interviewingApps, fill: "#10b981" },
@@ -95,7 +97,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ applications = [],
         </div>
       </div>
 
-      {totalApps === 0 ? (
+      {totalApps === 0 && readyApps === 0 ? (
         <div className="bg-slate-900/80 rounded-2xl p-12 border border-slate-800 text-center space-y-3">
           <div className="w-12 h-12 bg-slate-800 text-slate-400 rounded-full flex items-center justify-center mx-auto">
             <Inbox className="w-6 h-6" />

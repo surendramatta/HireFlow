@@ -36,8 +36,8 @@ export const JobApplyAgentModal: React.FC<JobApplyAgentModalProps> = ({
   onClose,
   onCompleteApply,
 }) => {
-  const [candidateEmail, setCandidateEmail] = useState(profile.email || "surendranaidu1603@gmail.com");
-  const [portalPassword, setPortalPassword] = useState("••••••••••••");
+  const [candidateEmail, setCandidateEmail] = useState(profile.email || "");
+  const [portalPassword, setPortalPassword] = useState("");
   const [useGeminiCoverLetter, setUseGeminiCoverLetter] = useState(true);
   const [customCoverLetter, setCustomCoverLetter] = useState("");
   const [isExecuting, setIsExecuting] = useState(false);

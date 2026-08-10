@@ -23,6 +23,7 @@ interface Props {
   profile: CandidateProfile;
   onClose: () => void;
   onConfirmSubmitted: (job: JobListing, coverLetter: string, screeningAnswers?: Record<string, string>) => void;
+  onSaveReadyToSubmit?: (job: JobListing, coverLetter: string, screeningAnswers?: Record<string, string>) => void;
 }
 
 export const AssistedApplyModal: React.FC<Props> = ({
@@ -30,6 +31,7 @@ export const AssistedApplyModal: React.FC<Props> = ({
   profile,
   onClose,
   onConfirmSubmitted,
+  onSaveReadyToSubmit,
 }) => {
   const [coverLetter, setCoverLetter] = useState<string>("");
   const [screeningAnswers, setScreeningAnswers] = useState<Record<string, string>>({});
@@ -141,6 +143,13 @@ export const AssistedApplyModal: React.FC<Props> = ({
     }
     onConfirmSubmitted(job, coverLetter, screeningAnswers);
     onClose();
+  };
+
+  const handleSaveReadyToSubmit = () => {
+    if (onSaveReadyToSubmit) {
+      onSaveReadyToSubmit(job, coverLetter, screeningAnswers);
+      onClose();
+    }
   };
 
   return (
@@ -297,22 +306,31 @@ export const AssistedApplyModal: React.FC<Props> = ({
           <p className="text-xs text-slate-400">
             Confirming updates your tracking status to <strong>Applied</strong> and records your submission in your dashboard.
           </p>
-          <div className="flex items-center justify-center gap-3 pt-1">
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
             <button
               onClick={handleConfirmSubmission}
               className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg transition shadow-lg shadow-emerald-600/20 flex items-center gap-1.5"
             >
-              <span>✓ Open Portal & Confirm Application</span>
+              <span>✓ Confirm Submitted on Portal</span>
             </button>
+            {onSaveReadyToSubmit && (
+              <button
+                onClick={handleSaveReadyToSubmit}
+                disabled={generating}
+                className="px-4 py-2.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-xs font-semibold rounded-lg transition shadow-lg shadow-violet-600/20"
+              >
+                Save as Ready to Submit
+              </button>
+            )}
             <button
               onClick={onClose}
               className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium rounded-lg transition"
             >
-              Not Yet / Cancel
+              Cancel
             </button>
           </div>
           {!portalOpened && (
-            <p className="text-[11px] text-amber-400">Please click step 2 to open the job portal before confirming.</p>
+            <p className="text-[11px] text-amber-400">Open the job portal in step 2 before confirming a real submission.</p>
           )}
         </div>
       </div>

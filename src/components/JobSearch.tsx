@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import { JobListing, CandidateProfile, ApplicationRecord, TabType } from "../types";
 import { JobDetailModal } from "./JobDetailModal";
-import { JobApplyAgentModal } from "./JobApplyAgentModal";
 import { 
   Search, 
   Filter, 
@@ -53,6 +52,9 @@ export const JobSearch: React.FC<JobSearchProps> = ({
   selectedJob,
   setSelectedJob,
   setActiveTab,
+  isSearchingJobs = false,
+  setIsSearchingJobs,
+  setJobs,
 }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedPlatform, setSelectedPlatform] = useState<string>("all");
@@ -106,6 +108,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({
 
   const handleSearchRealWebJobs = async () => {
     setIsSearchingWeb(true);
+    setIsSearchingJobs?.(true);
     try {
       const queryToSearch = searchQuery.trim() || (profile.targetTitles && profile.targetTitles[0]) || "Software Engineer";
       const res = await fetch("/api/ai/search-real-jobs", {
@@ -126,12 +129,14 @@ export const JobSearch: React.FC<JobSearchProps> = ({
             const { id, ...jobData } = j;
             await onAddCustomJob(jobData);
           }
+          setJobs?.(liveJobs);
         }
       }
     } catch (err) {
       console.error("Error searching live jobs:", err);
     } finally {
       setIsSearchingWeb(false);
+      setIsSearchingJobs?.(false);
     }
   };
 
@@ -153,9 +158,8 @@ export const JobSearch: React.FC<JobSearchProps> = ({
   const [aiScreeningAnswers, setAiScreeningAnswers] = useState<Record<string, string> | null>(null);
   const [applySuccessMessage, setApplySuccessMessage] = useState<string | null>(null);
 
-  // Full-Screen Job Modal & Autonomous Application Agent Modals
+  // Full-Screen Job Modal
   const [viewingDetailJob, setViewingDetailJob] = useState<JobListing | null>(null);
-  const [applyingAgentJob, setApplyingAgentJob] = useState<JobListing | null>(null);
 
   const handleAddJobSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -356,11 +360,18 @@ export const JobSearch: React.FC<JobSearchProps> = ({
   };
 
   const handleApplyClick = (job: JobListing) => {
-    setApplyingAgentJob(job);
+    onApplyJob(job);
   };
 
   return (
     <div className="space-y-6">
+      {(isSearchingJobs || isSearchingWeb) && (
+        <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-4 py-3 flex items-center gap-3 text-xs text-indigo-200">
+          <Loader2 className="w-4 h-4 animate-spin text-indigo-400 shrink-0" />
+          <span>Scanning Greenhouse, Lever, and Ashby boards for live openings...</span>
+        </div>
+      )}
+
       {/* Tsenta-Style Instant Job URL / Description Auto-Apply Importer */}
       <div className="bg-gradient-to-r from-indigo-950/80 via-slate-900/90 to-purple-950/80 rounded-2xl p-5 border border-indigo-500/30 shadow-xl space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -1053,23 +1064,9 @@ export const JobSearch: React.FC<JobSearchProps> = ({
           onClose={() => setViewingDetailJob(null)}
           onStartAutoApply={(job) => {
             setViewingDetailJob(null);
-            setApplyingAgentJob(job);
+            onApplyJob(job);
           }}
           onSaveJob={onSaveJob}
-        />
-      )}
-
-      {/* Modal 2: Autonomous Agent Auto-Apply Login & Form Submission */}
-      {applyingAgentJob && (
-        <JobApplyAgentModal
-          job={applyingAgentJob}
-          profile={profile}
-          onClose={() => setApplyingAgentJob(null)}
-          onCompleteApply={(job, coverLetter) => {
-            onApplyJob(job, coverLetter);
-            setApplySuccessMessage(`Applied & tracked ${job.company}! Form submission completed.`);
-            setTimeout(() => setApplySuccessMessage(null), 4000);
-          }}
         />
       )}
     </div>

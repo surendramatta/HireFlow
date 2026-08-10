@@ -180,7 +180,7 @@ export const AutoApplyAgent: React.FC<AutoApplyAgentProps> = ({
         await new Promise((r) => setTimeout(r, 400));
       }
 
-      // Phase 4: Submitting & Saving Record
+      // Phase 4: Queue as Ready to Submit (honest assisted apply)
       setAgentProgress((prev) => prev ? { ...prev, currentPhase: "submitting" } : null);
       await onApplyJob(job, generatedLetter, screeningAnswers);
       await new Promise((r) => setTimeout(r, 500));
@@ -189,8 +189,8 @@ export const AutoApplyAgent: React.FC<AutoApplyAgentProps> = ({
     setAgentProgress({
       currentJobIndex: jobsToProcess.length,
       totalJobs: jobsToProcess.length,
-      currentJobTitle: "Batch Execution Complete!",
-      currentCompany: `${jobsToProcess.length} Applications Processed`,
+      currentJobTitle: "Batch Preparation Complete!",
+      currentCompany: `${jobsToProcess.length} Applications Ready to Submit`,
       currentMatchScore: 100,
       currentPhase: "done",
     });
@@ -222,7 +222,7 @@ export const AutoApplyAgent: React.FC<AutoApplyAgentProps> = ({
             <span>HireFlow Autopilot & Batch Application Engine</span>
           </h1>
           <p className="text-xs text-slate-400">
-            Processes job requirements against your parsed candidate profile, generates custom cover letters via Gemini, and automates 'Apply' actions.
+            Matches jobs to your profile, generates tailored cover letters via Gemini, and queues them as Ready to Submit for honest portal application.
           </p>
         </div>
 

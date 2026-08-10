@@ -39,6 +39,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
 
   const columns: { id: ApplicationStatus; title: string; color: string }[] = [
     { id: "saved", title: "Saved / Draft", color: "border-slate-700 bg-slate-900/40 text-slate-300" },
+    { id: "ready_to_submit", title: "Ready to Submit", color: "border-violet-500/40 bg-violet-950/20 text-violet-300" },
     { id: "applied", title: "Applied", color: "border-indigo-500/40 bg-indigo-950/20 text-indigo-300" },
     { id: "screening", title: "Screening", color: "border-amber-500/40 bg-amber-950/20 text-amber-300" },
     { id: "interviewing", title: "Interviewing", color: "border-emerald-500/40 bg-emerald-950/20 text-emerald-300" },
@@ -119,7 +120,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       </div>
 
       {/* Kanban Board Columns Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 overflow-x-auto pb-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-7 gap-4 overflow-x-auto pb-4">
         {columns.map((col) => {
           const colApps = (applications || []).filter((a) => a.status === col.id);
           return (
@@ -165,7 +166,9 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                         </div>
                         <div className="flex items-center">
                           <Clock className="w-3 h-3 mr-0.5 text-slate-500" />
-                          <span>Applied: {app.appliedDate}</span>
+                          <span>
+                            {app.status === "ready_to_submit" ? "Prepared" : "Applied"}: {app.appliedDate}
+                          </span>
                         </div>
                       </div>
 
@@ -184,6 +187,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                           className="bg-slate-900 text-slate-300 border border-slate-700 rounded px-1.5 py-0.5 text-[10px] focus:outline-none"
                         >
                           <option value="saved">Saved</option>
+                          <option value="ready_to_submit">Ready to Submit</option>
                           <option value="applied">Applied</option>
                           <option value="screening">Screening</option>
                           <option value="interviewing">Interviewing</option>

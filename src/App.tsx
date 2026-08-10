@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from "react";
-import { TabType, CandidateProfile, JobListing, ApplicationRecord, AutoApplyConfig, AutoApplyLog } from "./types";
-import { initialProfile, initialAutoApplyConfig } from "./data/mockData";
+import { TabType, JobListing, ApplicationRecord, AutoApplyConfig, AutoApplyLog } from "./types";
+import { initialAutoApplyConfig } from "./data/mockData";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { postJson } from "./lib/apiClient";
+import { enrichJobWithMatch, withJobDefaults } from "./lib/jobMatching";
 import { 
   subscribeToJobs, 
   subscribeToApplications, 
@@ -28,10 +29,12 @@ import { OutreachStudio } from "./components/OutreachStudio";
 import { InterviewPrep } from "./components/InterviewPrep";
 import { AnalyticsView } from "./components/AnalyticsView";
 import { AssistedApplyModal } from "./components/AssistedApplyModal";
+import { AlertCircle, Sparkles } from "lucide-react";
 
 const LOCAL_STORAGE_APPS_KEY = "hireflow_guest_applications";
 const LOCAL_STORAGE_LOGS_KEY = "hireflow_guest_logs";
 const LOCAL_STORAGE_CFG_KEY = "hireflow_guest_config";
+const LOCAL_STORAGE_SAVED_KEY = "hireflow_guest_saved_jobs";
 
 export default function App() {
   return (
@@ -53,7 +56,14 @@ function MainAppContent() {
       return [];
     }
   });
-  const [savedJobIds, setSavedJobIds] = useState<string[]>([]);
+  const [savedJobIds, setSavedJobIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_SAVED_KEY);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [autoApplyConfig, setAutoApplyConfig] = useState<AutoApplyConfig>(() => {
     try {
       const saved = localStorage.getItem(LOCAL_STORAGE_CFG_KEY);
@@ -73,6 +83,12 @@ function MainAppContent() {
   const [selectedJob, setSelectedJob] = useState<JobListing | null>(null);
   const [assistedApplyJob, setAssistedApplyJob] = useState<JobListing | null>(null);
   const [isSearchingJobs, setIsSearchingJobs] = useState<boolean>(false);
+  const [outreachPrefill, setOutreachPrefill] = useState<{ company?: string; jobTitle?: string; contactName?: string } | null>(null);
+
+  const needsOnboarding =
+    !profile.fullName?.trim() ||
+    !(profile.skills && profile.skills.length > 0) ||
+    !profile.resumeText?.trim();
 
   // 1. Quota Reset Check (Resets appliedToday on new day)
   useEffect(() => {
@@ -108,10 +124,18 @@ function MainAppContent() {
           const res = await postJson<{ jobs: JobListing[] }>("/api/jobs/search", {
             query: profile.targetTitles?.[0] || "Software Engineer",
             location: profile.preferredLocation || "Remote",
+            remoteOnly: profile.remoteOnly ?? true,
+            targetSkills: profile.skills || [],
           });
           if (res.jobs && res.jobs.length > 0) {
             for (const j of res.jobs.slice(0, 15)) {
-              await addCustomJobToDb(j);
+              const { id: _ignored, ...jobPayload } = j;
+              await addCustomJobToDb(
+                withJobDefaults({
+                  ...jobPayload,
+                  ...enrichJobWithMatch(jobPayload, profile),
+                })
+              );
             }
           }
         } catch (err) {
@@ -123,7 +147,7 @@ function MainAppContent() {
     });
 
     return () => unsubscribe();
-  }, [profile.targetTitles, profile.preferredLocation]);
+  }, [profile.targetTitles, profile.preferredLocation, profile.skills, profile.remoteOnly]);
 
   // 3. Subscribe to Realtime Applications & Migrate Local Guest Applications when logging in
   useEffect(() => {
@@ -155,9 +179,17 @@ function MainAppContent() {
     return () => unsubscribe();
   }, [user]);
 
-  // 4. Subscribe to Saved Jobs
+  // 4. Subscribe to Saved Jobs (Firestore for signed-in, localStorage for guests)
   useEffect(() => {
-    const unsubscribe = subscribeToSavedJobs(user ? user.uid : null, (liveSavedIds) => {
+    if (!user) {
+      try {
+        const saved = localStorage.getItem(LOCAL_STORAGE_SAVED_KEY);
+        if (saved) setSavedJobIds(JSON.parse(saved));
+      } catch {}
+      return;
+    }
+
+    const unsubscribe = subscribeToSavedJobs(user.uid, (liveSavedIds) => {
       setSavedJobIds(liveSavedIds);
     });
     return () => unsubscribe();
@@ -213,13 +245,17 @@ function MainAppContent() {
     setAssistedApplyJob(job);
   };
 
-  // Handle Confirmed Submission from Assisted Apply Modal
-  const handleConfirmSubmittedApplication = async (
-    job: JobListing, 
-    coverLetter: string, 
-    screeningAnswers?: Record<string, string>
+  // Create or update an application record with a given status
+  const upsertApplicationRecord = async (
+    job: JobListing,
+    coverLetter: string,
+    status: ApplicationRecord["status"],
+    screeningAnswers?: Record<string, string>,
+    logMessage?: string,
+    logStatus: AutoApplyLog["status"] = "success"
   ) => {
     const todayStr = new Date().toISOString().split("T")[0];
+    const matchMeta = enrichJobWithMatch(job, profile);
 
     const newRecord: ApplicationRecord = {
       id: `app-${job.id}-${Date.now()}`,
@@ -230,52 +266,93 @@ function MainAppContent() {
       location: job.location,
       salaryRange: job.salaryRange,
       platform: job.platform,
-      status: "applied",
+      status,
       appliedDate: todayStr,
       lastUpdated: todayStr,
-      matchScoreAtApply: job.matchScore,
+      matchScoreAtApply: job.matchScore || matchMeta.matchScore,
       coverLetterUsed: coverLetter,
       screeningAnswers: screeningAnswers,
     };
 
     const newLog: AutoApplyLog = {
       id: `log-${Date.now()}`,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       company: job.company,
       role: job.title,
-      status: "success",
-      matchScore: job.matchScore,
-      message: `Submitted on ${job.platform} portal. Recorded in tracking dashboard.`,
+      status: logStatus,
+      matchScore: newRecord.matchScoreAtApply,
+      message: logMessage || `Status set to ${status} for ${job.company}.`,
     };
 
     if (user) {
       await saveApplicationToDb(user.uid, newRecord);
       await addAutoApplyLogToDb(user.uid, newLog);
 
-      const updatedConfig = {
-        ...autoApplyConfig,
-        appliedToday: autoApplyConfig.appliedToday + 1,
-      };
-      await updateAutoApplyConfigInDb(user.uid, updatedConfig);
+      if (status === "applied") {
+        const updatedConfig = {
+          ...autoApplyConfig,
+          appliedToday: autoApplyConfig.appliedToday + 1,
+        };
+        await updateAutoApplyConfigInDb(user.uid, updatedConfig);
+      }
     } else {
       setApplications((prev) => {
         const updated = [newRecord, ...prev.filter((a) => a.jobId !== job.id)];
-        try { localStorage.setItem(LOCAL_STORAGE_APPS_KEY, JSON.stringify(updated)); } catch {}
+        try {
+          localStorage.setItem(LOCAL_STORAGE_APPS_KEY, JSON.stringify(updated));
+        } catch {}
         return updated;
       });
 
       setLogs((prev) => {
         const updated = [newLog, ...prev];
-        try { localStorage.setItem(LOCAL_STORAGE_LOGS_KEY, JSON.stringify(updated)); } catch {}
+        try {
+          localStorage.setItem(LOCAL_STORAGE_LOGS_KEY, JSON.stringify(updated));
+        } catch {}
         return updated;
       });
 
-      setAutoApplyConfig((prev) => {
-        const updated = { ...prev, appliedToday: prev.appliedToday + 1 };
-        try { localStorage.setItem(LOCAL_STORAGE_CFG_KEY, JSON.stringify(updated)); } catch {}
-        return updated;
-      });
+      if (status === "applied") {
+        setAutoApplyConfig((prev) => {
+          const updated = { ...prev, appliedToday: prev.appliedToday + 1 };
+          try {
+            localStorage.setItem(LOCAL_STORAGE_CFG_KEY, JSON.stringify(updated));
+          } catch {}
+          return updated;
+        });
+      }
     }
+  };
+
+  // Handle Confirmed Submission from Assisted Apply Modal
+  const handleConfirmSubmittedApplication = async (
+    job: JobListing,
+    coverLetter: string,
+    screeningAnswers?: Record<string, string>
+  ) => {
+    await upsertApplicationRecord(
+      job,
+      coverLetter,
+      "applied",
+      screeningAnswers,
+      `Submitted on ${job.platform} portal. Recorded in tracking dashboard.`
+    );
+  };
+
+  // Save prepared materials without claiming a portal submission
+  const handleSaveReadyToSubmit = async (
+    job: JobListing,
+    coverLetter: string,
+    screeningAnswers?: Record<string, string>
+  ) => {
+    await upsertApplicationRecord(
+      job,
+      coverLetter,
+      "ready_to_submit",
+      screeningAnswers,
+      `Materials prepared for ${job.platform}. Ready for portal submission.`,
+      "pending"
+    );
   };
 
   const handleSaveJob = async (job: JobListing) => {
@@ -287,6 +364,9 @@ function MainAppContent() {
         ? savedJobIds.filter((id) => id !== job.id)
         : [...savedJobIds, job.id];
       setSavedJobIds(updatedSaved);
+      try {
+        localStorage.setItem(LOCAL_STORAGE_SAVED_KEY, JSON.stringify(updatedSaved));
+      } catch {}
     }
   };
 
@@ -323,7 +403,11 @@ function MainAppContent() {
   };
 
   const handleAddCustomJob = async (newJobData: Omit<JobListing, "id">) => {
-    const newId = await addCustomJobToDb(newJobData);
+    const enriched = {
+      ...withJobDefaults(newJobData),
+      ...enrichJobWithMatch(newJobData, profile),
+    };
+    const newId = await addCustomJobToDb(enriched);
     return newId;
   };
 
@@ -348,6 +432,27 @@ function MainAppContent() {
       />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {needsOnboarding && (
+          <div className="mb-6 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-semibold text-amber-200">Finish setting up your candidate profile</p>
+                <p className="text-xs text-amber-200/80 mt-0.5">
+                  Add your name, skills, and resume so match scores, cover letters, and autopilot can tailor applications accurately.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setActiveTab("resume")}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition shrink-0"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              Complete Resume AI Setup
+            </button>
+          </div>
+        )}
+
         {activeTab === "dashboard" && (
           <Dashboard
             jobs={jobs}
@@ -415,7 +520,8 @@ function MainAppContent() {
             applications={applications}
             profile={profile}
             onApplyJob={async (job, coverLetter, screeningAnswers) => {
-              await handleConfirmSubmittedApplication(job, coverLetter || "", screeningAnswers);
+              // Batch autopilot prepares materials as ready_to_submit (honest flow)
+              await handleSaveReadyToSubmit(job, coverLetter || "", screeningAnswers);
             }}
             toggleAutopilot={toggleAutopilot}
           />
@@ -427,14 +533,19 @@ function MainAppContent() {
             setApplications={setApplications}
             onUpdateStatus={handleUpdateApplicationStatus}
             onDeleteApplication={handleDeleteApplication}
-            onOpenOutreachForApp={(_app) => {
+            onOpenOutreachForApp={(app) => {
+              setOutreachPrefill({
+                company: app.company,
+                jobTitle: app.title,
+                contactName: app.contactName,
+              });
               setActiveTab("outreach");
             }}
           />
         )}
 
         {activeTab === "outreach" && (
-          <OutreachStudio profile={profile} />
+          <OutreachStudio profile={profile} prefill={outreachPrefill || undefined} />
         )}
 
         {activeTab === "interview" && (
@@ -453,6 +564,7 @@ function MainAppContent() {
           profile={profile}
           onClose={() => setAssistedApplyJob(null)}
           onConfirmSubmitted={handleConfirmSubmittedApplication}
+          onSaveReadyToSubmit={handleSaveReadyToSubmit}
         />
       )}
     </div>
