@@ -765,7 +765,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({
                       }`}
                     >
                       <Bot className="w-4 h-4 text-amber-300 animate-bounce" />
-                      <span>{isApplied(activeJob) ? "Applied" : "Auto-Apply Agent"}</span>
+                      <span>{isApplied(activeJob) ? "Applied" : "Application Assistant"}</span>
                     </button>
 
                     <button
