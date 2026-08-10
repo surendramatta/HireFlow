@@ -258,7 +258,8 @@ function MainAppContent() {
     const matchMeta = enrichJobWithMatch(job, profile);
 
     const newRecord: ApplicationRecord = {
-      id: `app-${job.id}-${Date.now()}`,
+      // One record per job — reopen/confirm updates the same tracker card
+      id: `app-${job.id}`,
       jobId: job.id,
       title: job.title,
       company: job.company,
