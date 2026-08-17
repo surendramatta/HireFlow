@@ -337,6 +337,36 @@ app.get("/api/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
+const TECH_TITLE_RE =
+  /\b(software|engineer|developer|frontend|front-end|backend|back-end|full[\s-]?stack|sre|devops|platform|infrastructure|security engineer|ml engineer|machine learning|data engineer|data scientist|mobile engineer|ios|android|staff engineer|principal engineer|engineering manager|eng manager|swe|qa engineer|test engineer|automation engineer|site reliability|cloud engineer|systems engineer|firmware|embedded|rust|golang|typescript|react|node\.?js)\b/i;
+
+const JUNK_TITLE_RE =
+  /\b(sales|account executive|account manager|business development|bdr|sdr|marketing|brand manager|retail|store manager|cashier|waiter|barista|driver|warehouse|aml|kyc|compliance officer|risk officer|branch manager|recruiter|talent acquisition|hr generalist|people ops|customer support|call center|telemarketing|real estate|insurance agent|nurse|pharmacist|teacher|professor|attorney|paralegal|chef|cook)\b/i;
+
+function queryTokens(queryLower: string): string[] {
+  return queryLower
+    .split(/[^a-z0-9+#.]/i)
+    .map((t) => t.trim())
+    .filter((t) => t.length > 2 && !["the", "and", "for", "with", "job", "role"].includes(t));
+}
+
+function titleRelevance(jobTitle: string, queryLower: string): number {
+  const title = (jobTitle || "").toLowerCase();
+  if (!title) return 0;
+  if (JUNK_TITLE_RE.test(title) && !TECH_TITLE_RE.test(title)) return 0;
+
+  const tokens = queryTokens(queryLower);
+  if (!tokens.length) {
+    return TECH_TITLE_RE.test(title) ? 70 : 20;
+  }
+
+  const hit = tokens.filter((t) => title.includes(t)).length;
+  const tokenScore = Math.round((hit / tokens.length) * 80);
+  const techBonus = TECH_TITLE_RE.test(title) ? 20 : 0;
+  const exactBonus = title.includes(queryLower) ? 15 : 0;
+  return Math.min(100, tokenScore + techBonus + exactBonus);
+}
+
 function scoreAndFilterJobs(
   allJobs: StandardJobListing[],
   opts: {
@@ -347,18 +377,35 @@ function scoreAndFilterJobs(
   }
 ): StandardJobListing[] {
   const { queryLower, locationLower, remoteOnly, candidateSkillsLower } = opts;
+  const wantsTech =
+    !queryLower ||
+    TECH_TITLE_RE.test(queryLower) ||
+    /\b(software|engineer|developer|swe)\b/i.test(queryLower);
+
   return allJobs
     .filter((job) => {
       if (remoteOnly && !job.isRemote) return false;
 
-      if (queryLower) {
-        const matchesTitle = job.title.toLowerCase().includes(queryLower);
-        const matchesCompany = job.company.toLowerCase().includes(queryLower);
-        const matchesDesc = job.description.toLowerCase().includes(queryLower);
-        const matchesSkills = job.skillsRequired.some((s) => s.toLowerCase().includes(queryLower));
-        if (!matchesTitle && !matchesCompany && !matchesDesc && !matchesSkills) {
-          return false;
+      const title = job.title || "";
+      const titleLower = title.toLowerCase();
+
+      // Drop clear non-fit roles for tech searches
+      if (wantsTech) {
+        if (JUNK_TITLE_RE.test(title) && !TECH_TITLE_RE.test(title)) return false;
+        if (!TECH_TITLE_RE.test(title)) {
+          // allow only if query tokens strongly hit the title
+          const tokens = queryTokens(queryLower);
+          const hit = tokens.filter((t) => titleLower.includes(t)).length;
+          if (!tokens.length || hit < Math.ceil(tokens.length * 0.6)) return false;
         }
+      }
+
+      if (queryLower) {
+        const rel = titleRelevance(title, queryLower);
+        const matchesCompany = job.company.toLowerCase().includes(queryLower);
+        // Prefer title relevance; don't keep roles that only match buried description text
+        if (rel < 35 && !matchesCompany) return false;
+        if (rel < 20) return false;
       }
 
       if (locationLower && locationLower !== "remote") {
@@ -369,63 +416,70 @@ function scoreAndFilterJobs(
       return true;
     })
     .map((job) => {
-      const matchingSkills = job.skillsRequired.filter((s) =>
+      const realSkills = (job.skillsRequired || []).filter(
+        (s) => s && s.toLowerCase() !== "software engineering"
+      );
+      const matchingSkills = realSkills.filter((s) =>
         candidateSkillsLower.includes(s.toLowerCase())
       );
-      const missingSkills = job.skillsRequired.filter(
+      const missingSkills = realSkills.filter(
         (s) => !candidateSkillsLower.includes(s.toLowerCase())
       );
-      let matchScore = 78;
-      if (candidateSkillsLower.length > 0 && job.skillsRequired.length > 0) {
-        matchScore = Math.min(
-          98,
-          Math.max(68, Math.round((matchingSkills.length / job.skillsRequired.length) * 100) + 20)
-        );
+
+      const rel = titleRelevance(job.title, queryLower);
+      let skillScore = 40;
+      if (candidateSkillsLower.length > 0 && realSkills.length > 0) {
+        skillScore = Math.round((matchingSkills.length / realSkills.length) * 55);
+      } else if (candidateSkillsLower.length === 0) {
+        skillScore = 35;
       }
+
+      const matchScore = Math.min(99, Math.max(40, Math.round(rel * 0.45 + skillScore + (matchingSkills.length > 0 ? 10 : 0))));
+
       return {
         ...job,
         matchScore,
         matchingSkills,
-        missingSkills,
+        missingSkills: missingSkills.slice(0, 8),
+        skillsRequired: realSkills.length ? realSkills : job.skillsRequired,
         companySize: job.companySize || "Unknown",
         logoUrl: job.logoUrl || "",
       };
-    });
+    })
+    .sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
 }
 
-/** Round-robin across platforms so Greenhouse doesn't crowd out every other board. */
+/**
+ * Soft diversify: keep best matches first, but cap any one platform so the feed
+ * isn't 80 Greenhouse rows — without forcing junk from weak boards into the top.
+ */
 function diversifyByPlatform(jobs: StandardJobListing[], limit: number): StandardJobListing[] {
-  if (jobs.length <= limit) {
-    return [...jobs].sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
-  }
+  const sorted = [...jobs].sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
+  if (sorted.length <= limit) return sorted;
 
-  const byPlatform = new Map<string, StandardJobListing[]>();
-  for (const job of jobs) {
-    const key = job.platform || "Other";
-    const list = byPlatform.get(key) || [];
-    list.push(job);
-    byPlatform.set(key, list);
-  }
-
-  for (const list of byPlatform.values()) {
-    list.sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
-  }
-
-  const queues = [...byPlatform.values()];
+  const maxPerPlatform = Math.max(6, Math.ceil(limit / 5));
+  const counts = new Map<string, number>();
   const picked: StandardJobListing[] = [];
-  let progress = true;
-  while (picked.length < limit && progress) {
-    progress = false;
-    for (const queue of queues) {
-      if (picked.length >= limit) break;
-      const next = queue.shift();
-      if (next) {
-        picked.push(next);
-        progress = true;
-      }
+  const deferred: StandardJobListing[] = [];
+
+  for (const job of sorted) {
+    if (picked.length >= limit) break;
+    const key = job.platform || "Other";
+    const used = counts.get(key) || 0;
+    if (used < maxPerPlatform) {
+      picked.push(job);
+      counts.set(key, used + 1);
+    } else {
+      deferred.push(job);
     }
   }
-  return picked;
+
+  for (const job of deferred) {
+    if (picked.length >= limit) break;
+    picked.push(job);
+  }
+
+  return picked.sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
 }
 
 // REAL JOB BOARD SEARCH — company ATS (GH/Lever/Ashby/SmartRecruiters/Recruitee) + aggregators

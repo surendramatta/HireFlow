@@ -60,11 +60,11 @@ export function extractSkillsFromText(text: string): string[] {
 }
 
 function baseListing(partial: Partial<StandardJobListing> & Pick<StandardJobListing, "id" | "title" | "company" | "platform" | "applyUrl">): StandardJobListing {
-  const skills = partial.skillsRequired?.length
-    ? partial.skillsRequired
-    : extractSkillsFromText(`${partial.title} ${partial.description || ""}`);
-  const resolvedSkills =
-    skills.length > 0 ? skills : ["Software Engineering"];
+  const extracted = extractSkillsFromText(`${partial.title} ${partial.description || ""}`);
+  const skills =
+    partial.skillsRequired?.filter((s) => s && s.toLowerCase() !== "software engineering").length
+      ? partial.skillsRequired!.filter((s) => s && s.toLowerCase() !== "software engineering")
+      : extracted;
   return {
     logoUrl: "",
     location: "Remote",
@@ -81,7 +81,7 @@ function baseListing(partial: Partial<StandardJobListing> & Pick<StandardJobList
     benefits: [],
     companySize: "Unknown",
     ...partial,
-    skillsRequired: resolvedSkills,
+    skillsRequired: skills,
   };
 }
 

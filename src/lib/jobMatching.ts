@@ -34,7 +34,8 @@ export function enrichJobWithMatch(
   let calculatedScore = Math.round(skillRatio * 65);
   if (titleMatch) calculatedScore += 20;
   if (matchingSkills.length > 0) calculatedScore += 15;
-  const matchScore = Math.min(99, Math.max(55, calculatedScore));
+  // Don't fake a high floor when the profile barely overlaps
+  const matchScore = Math.min(99, Math.max(matchingSkills.length || titleMatch ? 45 : 25, calculatedScore));
 
   return { matchScore, matchingSkills, missingSkills };
 }

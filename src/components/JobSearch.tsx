@@ -393,9 +393,9 @@ export const JobSearch: React.FC<JobSearchProps> = ({
             </span>
             <div>
               <h2 className="text-sm font-extrabold text-white flex items-center space-x-2">
-                <span>Instant Job Link Importer & AI Auto-Apply</span>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-400/20 text-amber-300 border border-amber-400/30">
-                  Tsenta Auto-Pilot
+                <span>Import Job Link</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-700/80 text-slate-300 border border-slate-600/50">
+                  Assisted Apply
                 </span>
               </h2>
               <p className="text-xs text-slate-300">
@@ -432,7 +432,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({
             ) : (
               <>
                 <Zap className="w-4 h-4 text-amber-300 fill-amber-300" />
-                <span>Import & Auto-Apply</span>
+                <span>Import & Prep Apply</span>
               </>
             )}
           </button>

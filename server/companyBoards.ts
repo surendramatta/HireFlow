@@ -112,25 +112,14 @@ export const COMPANY_BOARDS: CompanyBoard[] = [
   { slug: "supabase", name: "Supabase", source: "ashby" },
   { slug: "temporal", name: "Temporal", source: "ashby" },
 
-  // —— SmartRecruiters ——
+  // —— SmartRecruiters (keep higher-signal tech/enterprise boards) ——
   { slug: "Visa", name: "Visa", source: "smartrecruiters" },
-  { slug: "IKEA", name: "IKEA", source: "smartrecruiters" },
-  { slug: "BoschGroup", name: "Bosch", source: "smartrecruiters" },
-  { slug: "adidas", name: "adidas", source: "smartrecruiters" },
   { slug: "Siemens", name: "Siemens", source: "smartrecruiters" },
-  { slug: "MarriottInternational", name: "Marriott", source: "smartrecruiters" },
-  { slug: "Vodafone", name: "Vodafone", source: "smartrecruiters" },
-  { slug: "Philips", name: "Philips", source: "smartrecruiters" },
 
   // —— Recruitee ——
   { slug: "bunq", name: "bunq", source: "recruitee" },
   { slug: "adjust", name: "Adjust", source: "recruitee" },
   { slug: "personio", name: "Personio", source: "recruitee" },
-  { slug: "samsung", name: "Samsung", source: "recruitee" },
-  { slug: "teleperformance", name: "Teleperformance", source: "recruitee" },
-  { slug: "accenture", name: "Accenture", source: "recruitee" },
-  { slug: "ey", name: "EY", source: "recruitee" },
-  { slug: "google", name: "Google RT", source: "recruitee" },
 ];
 
 /** Aggregator boards that are searched as whole marketplaces (not per-company). */
