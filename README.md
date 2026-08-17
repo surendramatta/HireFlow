@@ -4,7 +4,7 @@ Next-gen AI job search and application copilot with ATS resume tailoring, assist
 
 ## Features
 
-- **Live job search** across Greenhouse, Lever, and Ashby company boards
+- **Live job search** across Greenhouse, Lever, Ashby, SmartRecruiters, Recruitee, plus Remotive, RemoteOK, Arbeitnow, Jobicy, Himalayas, The Muse, and We Work Remotely
 - **Resume AI** for parsing, ATS scoring, and JD-tailored bullet rewriting
 - **Assisted apply** with AI cover letters, screening answers, bookmarklet autofill, and Playwright script export
 - **Ready to Submit** pipeline so materials are prepared before you confirm a real portal submission

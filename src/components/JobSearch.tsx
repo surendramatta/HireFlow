@@ -372,7 +372,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({
       {(isSearchingJobs || isSearchingWeb) && (
         <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-4 py-3 flex items-center gap-3 text-xs text-indigo-200">
           <Loader2 className="w-4 h-4 animate-spin text-indigo-400 shrink-0" />
-          <span>Scanning Greenhouse, Lever, and Ashby boards for live openings...</span>
+          <span>Scanning company ATS boards and job marketplaces for live openings...</span>
         </div>
       )}
 
@@ -391,12 +391,12 @@ export const JobSearch: React.FC<JobSearchProps> = ({
                 </span>
               </h2>
               <p className="text-xs text-slate-300">
-                Paste a Greenhouse, Lever, Ashby, or Workday job URL — or paste the raw job description.
+                Paste any ATS or marketplace job URL — or paste the raw job description.
               </p>
             </div>
           </div>
           <span className="text-[11px] text-indigo-300/80 font-mono hidden md:inline">
-            Greenhouse • Lever • Ashby
+            GH • Lever • Ashby • Remotive • RemoteOK + more
           </span>
         </div>
 
@@ -447,7 +447,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({
               <span>Job Feed & AI Match Engine</span>
             </h1>
             <p className="text-xs text-slate-400 mt-1">
-              Live vacancies from Greenhouse, Lever & Ashby with resume match scoring.
+              Live vacancies from company ATS boards and remote job marketplaces, with resume match scoring.
             </p>
           </div>
 
@@ -475,7 +475,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({
               onClick={handleSearchRealWebJobs}
               disabled={isSearchingWeb}
               className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-xs font-bold text-white transition flex items-center space-x-1.5 shrink-0 shadow-lg shadow-indigo-600/25"
-              title="Search Greenhouse, Lever, and Ashby company boards"
+              title="Search all connected job boards and ATS company pages"
             >
               {isSearchingWeb ? (
                 <>
@@ -507,7 +507,21 @@ export const JobSearch: React.FC<JobSearchProps> = ({
             <span className="text-slate-400 flex items-center mr-1 font-semibold text-[11px]">
               <Filter className="w-3.5 h-3.5 mr-1 text-indigo-400" /> Platform:
             </span>
-            {["all", "Greenhouse", "Lever", "Ashby"].map((platform) => (
+            {[
+              "all",
+              "Greenhouse",
+              "Lever",
+              "Ashby",
+              "SmartRecruiters",
+              "Recruitee",
+              "Remotive",
+              "RemoteOK",
+              "Arbeitnow",
+              "Jobicy",
+              "Himalayas",
+              "The Muse",
+              "We Work Remotely",
+            ].map((platform) => (
               <button
                 key={platform}
                 onClick={() => setSelectedPlatform(platform)}
@@ -611,7 +625,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({
               <div>
                 <p className="text-sm text-slate-200 font-bold">No active jobs in your current feed.</p>
                 <p className="text-xs text-slate-400 mt-1">
-                  Search live Greenhouse / Lever / Ashby openings or paste a direct job link.
+                  Search live openings across all boards or paste a direct job link.
                 </p>
               </div>
               <div className="flex flex-col sm:flex-row items-center justify-center gap-2 pt-1">
@@ -970,7 +984,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({
               </div>
               <h3 className="text-lg font-bold text-white">Add Custom Real Job Listing</h3>
               <p className="text-xs text-slate-400">
-                Paste an active Greenhouse, Lever, Ashby, or Workday vacancy URL to track & apply.
+                Paste an active ATS or marketplace vacancy URL to track & apply.
               </p>
             </div>
 
@@ -1020,9 +1034,18 @@ export const JobSearch: React.FC<JobSearchProps> = ({
                   >
                     <option value="Greenhouse">Greenhouse</option>
                     <option value="Lever">Lever</option>
-                    <option value="LinkedIn">LinkedIn</option>
+                    <option value="Ashby">Ashby</option>
+                    <option value="SmartRecruiters">SmartRecruiters</option>
+                    <option value="Recruitee">Recruitee</option>
+                    <option value="Remotive">Remotive</option>
+                    <option value="RemoteOK">RemoteOK</option>
+                    <option value="Arbeitnow">Arbeitnow</option>
+                    <option value="Jobicy">Jobicy</option>
+                    <option value="Himalayas">Himalayas</option>
+                    <option value="The Muse">The Muse</option>
+                    <option value="We Work Remotely">We Work Remotely</option>
                     <option value="Workday">Workday</option>
-                    <option value="Google Jobs">Google Jobs</option>
+                    <option value="LinkedIn">LinkedIn</option>
                     <option value="Indeed">Indeed</option>
                   </select>
                 </div>

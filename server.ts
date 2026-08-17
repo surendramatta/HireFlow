@@ -3,8 +3,7 @@ import path from "path";
 import dotenv from "dotenv";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
-import { COMPANY_BOARDS } from "./server/companyBoards";
-import { fetchGreenhouse, fetchLever, fetchAshby, StandardJobListing } from "./server/jobSources";
+import { fetchAllJobBoards, StandardJobListing } from "./server/jobSources";
 
 dotenv.config();
 
@@ -338,34 +337,18 @@ app.get("/api/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
-// REAL JOB BOARD SEARCH (Greenhouse, Lever, Ashby - No fake/AI-guessed jobs)
-app.post("/api/jobs/search", async (req, res) => {
-  try {
-    const { query = "", location = "", remoteOnly = false, targetSkills = [] } = req.body;
-    const queryLower = (query || "").toLowerCase().trim();
-    const locationLower = (location || "").toLowerCase().trim();
-    const candidateSkillsLower = (targetSkills || []).map((s: string) => s.toLowerCase());
-
-    const promises = COMPANY_BOARDS.map((board) => {
-      if (board.source === "greenhouse") return fetchGreenhouse(board);
-      if (board.source === "lever") return fetchLever(board);
-      if (board.source === "ashby") return fetchAshby(board);
-      return Promise.resolve([] as StandardJobListing[]);
-    });
-
-    const results = await Promise.allSettled(promises);
-    let allJobs: StandardJobListing[] = [];
-    let failedSources = 0;
-
-    results.forEach((resItem) => {
-      if (resItem.status === "fulfilled") {
-        allJobs.push(...resItem.value);
-      } else {
-        failedSources++;
-      }
-    });
-
-    const filtered = allJobs.filter((job) => {
+function scoreAndFilterJobs(
+  allJobs: StandardJobListing[],
+  opts: {
+    queryLower: string;
+    locationLower: string;
+    remoteOnly: boolean;
+    candidateSkillsLower: string[];
+  }
+): StandardJobListing[] {
+  const { queryLower, locationLower, remoteOnly, candidateSkillsLower } = opts;
+  return allJobs
+    .filter((job) => {
       if (remoteOnly && !job.isRemote) return false;
 
       if (queryLower) {
@@ -384,7 +367,8 @@ app.post("/api/jobs/search", async (req, res) => {
       }
 
       return true;
-    }).map((job) => {
+    })
+    .map((job) => {
       const matchingSkills = job.skillsRequired.filter((s) =>
         candidateSkillsLower.includes(s.toLowerCase())
       );
@@ -407,13 +391,35 @@ app.post("/api/jobs/search", async (req, res) => {
         logoUrl: job.logoUrl || "",
       };
     });
+}
+
+// REAL JOB BOARD SEARCH — company ATS (GH/Lever/Ashby/SmartRecruiters/Recruitee) + aggregators
+app.post("/api/jobs/search", async (req, res) => {
+  try {
+    const { query = "", location = "", remoteOnly = false, targetSkills = [], platforms = [] } = req.body;
+    const queryLower = (query || "").toLowerCase().trim();
+    const locationLower = (location || "").toLowerCase().trim();
+    const candidateSkillsLower = (targetSkills || []).map((s: string) => s.toLowerCase());
+
+    const { jobs: allJobs, failedSources, sourcesTried } = await fetchAllJobBoards({
+      query,
+      platforms: Array.isArray(platforms) ? platforms : [],
+    });
+
+    const filtered = scoreAndFilterJobs(allJobs, {
+      queryLower,
+      locationLower,
+      remoteOnly: Boolean(remoteOnly),
+      candidateSkillsLower,
+    });
 
     return res.json({
-      jobs: filtered.slice(0, 50),
+      jobs: filtered.slice(0, 80),
       source: "job-boards",
       totalFetched: allJobs.length,
       fetchedAt: new Date().toISOString(),
       failedSources,
+      sourcesTried,
     });
   } catch (err: any) {
     console.error("Error searching job boards:", err);
@@ -427,73 +433,22 @@ app.post("/api/ai/search-real-jobs", async (req, res) => {
     const { query = "", location = "", platforms = [], remoteOnly = false, targetSkills = [] } = req.body;
     const queryLower = (query || "").toLowerCase().trim();
     const locationLower = (location || "").toLowerCase().trim();
-
-    const selectedPlatforms = Array.isArray(platforms) && platforms.length > 0 ? platforms : [];
-
-    const promises = COMPANY_BOARDS.filter((board) => {
-      if (selectedPlatforms.length === 0) return true;
-      return selectedPlatforms.some((p: string) => p.toLowerCase() === board.source.toLowerCase() || p.toLowerCase() === "all");
-    }).map((board) => {
-      if (board.source === "greenhouse") return fetchGreenhouse(board);
-      if (board.source === "lever") return fetchLever(board);
-      if (board.source === "ashby") return fetchAshby(board);
-      return Promise.resolve([] as StandardJobListing[]);
-    });
-
-    const results = await Promise.allSettled(promises);
-    let allJobs: StandardJobListing[] = [];
-
-    results.forEach((resItem) => {
-      if (resItem.status === "fulfilled") {
-        allJobs.push(...resItem.value);
-      }
-    });
-
     const candidateSkillsLower = (targetSkills || []).map((s: string) => s.toLowerCase());
 
-    const filtered = allJobs.filter((job) => {
-      if (remoteOnly && !job.isRemote) return false;
+    const { jobs: allJobs } = await fetchAllJobBoards({
+      query,
+      platforms: Array.isArray(platforms) ? platforms : [],
+    });
 
-      if (queryLower) {
-        const matchesTitle = job.title.toLowerCase().includes(queryLower);
-        const matchesCompany = job.company.toLowerCase().includes(queryLower);
-        const matchesDesc = job.description.toLowerCase().includes(queryLower);
-        const matchesSkills = job.skillsRequired.some((s) => s.toLowerCase().includes(queryLower));
-        if (!matchesTitle && !matchesCompany && !matchesDesc && !matchesSkills) {
-          return false;
-        }
-      }
-
-      if (locationLower && locationLower !== "remote") {
-        const matchesLoc = job.location.toLowerCase().includes(locationLower);
-        if (!matchesLoc && !job.isRemote) return false;
-      }
-
-      return true;
-    }).map((job) => {
-      // Calculate dynamic candidate match score
-      const matchingSkills = job.skillsRequired.filter((s) =>
-        candidateSkillsLower.includes(s.toLowerCase())
-      );
-      const missingSkills = job.skillsRequired.filter(
-        (s) => !candidateSkillsLower.includes(s.toLowerCase())
-      );
-      let matchScore = 78;
-      if (candidateSkillsLower.length > 0 && job.skillsRequired.length > 0) {
-        matchScore = Math.min(98, Math.max(68, Math.round((matchingSkills.length / job.skillsRequired.length) * 100) + 20));
-      }
-      return {
-        ...job,
-        matchScore,
-        matchingSkills,
-        missingSkills,
-        companySize: job.companySize || "Unknown",
-        logoUrl: job.logoUrl || "",
-      };
+    const filtered = scoreAndFilterJobs(allJobs, {
+      queryLower,
+      locationLower,
+      remoteOnly: Boolean(remoteOnly),
+      candidateSkillsLower,
     });
 
     // Return direct array for compatibility with JobSearch.tsx
-    return res.json(filtered.slice(0, 50));
+    return res.json(filtered.slice(0, 80));
   } catch (err: any) {
     console.error("Error in /api/ai/search-real-jobs:", err);
     res.status(500).json({ error: "Failed to search real jobs", message: err.message });

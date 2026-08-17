@@ -178,7 +178,7 @@ export const AssistedApplyModal: React.FC<Props> = ({
     setUrlError(null);
     if (!applyUrl) {
       setUrlError(
-        "This job has no valid apply link (expired or fake URL). Use Find Jobs → Search Live Jobs for real Greenhouse/Lever/Ashby openings."
+        "This job has no valid apply link (expired or fake URL). Use Find Jobs → Search Real Jobs for a live opening with a real apply URL."
       );
       return;
     }

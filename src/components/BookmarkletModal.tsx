@@ -54,7 +54,7 @@ export const BookmarkletModal: React.FC<BookmarkletModalProps> = ({
     const targetUrl = resolveApplyUrl(job || {});
     if (!targetUrl) {
       alert(
-        "This job has no valid apply link. Search live jobs again for a real Greenhouse/Lever/Ashby URL."
+        "This job has no valid apply link. Search real jobs again for a live opening with a valid apply URL."
       );
       return;
     }

@@ -77,7 +77,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               Welcome back, {userName} 👋
             </h1>
             <p className="text-sm text-slate-300 max-w-2xl leading-relaxed">
-              Your assisted apply copilot monitors Greenhouse, Lever, and Ashby boards. Target:{" "}
+              Your assisted apply copilot monitors company ATS boards and remote job marketplaces. Target:{" "}
               <span className="text-indigo-300 font-semibold">{targetTitle}</span> · min match{" "}
               <span className="text-emerald-400 font-semibold">{autoApplyConfig?.minMatchScore || 70}%</span>.
             </p>
