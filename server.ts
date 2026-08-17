@@ -393,6 +393,41 @@ function scoreAndFilterJobs(
     });
 }
 
+/** Round-robin across platforms so Greenhouse doesn't crowd out every other board. */
+function diversifyByPlatform(jobs: StandardJobListing[], limit: number): StandardJobListing[] {
+  if (jobs.length <= limit) {
+    return [...jobs].sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
+  }
+
+  const byPlatform = new Map<string, StandardJobListing[]>();
+  for (const job of jobs) {
+    const key = job.platform || "Other";
+    const list = byPlatform.get(key) || [];
+    list.push(job);
+    byPlatform.set(key, list);
+  }
+
+  for (const list of byPlatform.values()) {
+    list.sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
+  }
+
+  const queues = [...byPlatform.values()];
+  const picked: StandardJobListing[] = [];
+  let progress = true;
+  while (picked.length < limit && progress) {
+    progress = false;
+    for (const queue of queues) {
+      if (picked.length >= limit) break;
+      const next = queue.shift();
+      if (next) {
+        picked.push(next);
+        progress = true;
+      }
+    }
+  }
+  return picked;
+}
+
 // REAL JOB BOARD SEARCH — company ATS (GH/Lever/Ashby/SmartRecruiters/Recruitee) + aggregators
 app.post("/api/jobs/search", async (req, res) => {
   try {
@@ -413,13 +448,20 @@ app.post("/api/jobs/search", async (req, res) => {
       candidateSkillsLower,
     });
 
+    const diversified = diversifyByPlatform(filtered, 80);
+    const platformCounts: Record<string, number> = {};
+    for (const job of diversified) {
+      platformCounts[job.platform] = (platformCounts[job.platform] || 0) + 1;
+    }
+
     return res.json({
-      jobs: filtered.slice(0, 80),
+      jobs: diversified,
       source: "job-boards",
       totalFetched: allJobs.length,
       fetchedAt: new Date().toISOString(),
       failedSources,
       sourcesTried,
+      platformCounts,
     });
   } catch (err: any) {
     console.error("Error searching job boards:", err);
@@ -448,7 +490,7 @@ app.post("/api/ai/search-real-jobs", async (req, res) => {
     });
 
     // Return direct array for compatibility with JobSearch.tsx
-    return res.json(filtered.slice(0, 80));
+    return res.json(diversifyByPlatform(filtered, 80));
   } catch (err: any) {
     console.error("Error in /api/ai/search-real-jobs:", err);
     res.status(500).json({ error: "Failed to search real jobs", message: err.message });

@@ -132,6 +132,14 @@ export const JobSearch: React.FC<JobSearchProps> = ({
             await onAddCustomJob(j);
           }
           setJobs?.(validJobs);
+          const platformsHit = [...new Set(validJobs.map((j) => j.platform).filter(Boolean))];
+          setApplySuccessMessage(
+            `Loaded ${validJobs.length} live jobs across ${platformsHit.length} boards: ${platformsHit.slice(0, 6).join(", ")}${platformsHit.length > 6 ? "…" : ""}`
+          );
+          setTimeout(() => setApplySuccessMessage(null), 6000);
+        } else if (Array.isArray(liveJobs) && liveJobs.length === 0) {
+          setApplySuccessMessage("No live openings matched — try All Platforms or a broader title.");
+          setTimeout(() => setApplySuccessMessage(null), 5000);
         }
       }
     } catch (err) {
