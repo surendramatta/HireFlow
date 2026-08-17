@@ -14,18 +14,30 @@ import {
 
 interface OutreachStudioProps {
   profile: CandidateProfile;
+  prefill?: {
+    company?: string;
+    jobTitle?: string;
+    contactName?: string;
+  };
 }
 
-export const OutreachStudio: React.FC<OutreachStudioProps> = ({ profile }) => {
-  const [recruiterName, setRecruiterName] = useState("");
+export const OutreachStudio: React.FC<OutreachStudioProps> = ({ profile, prefill }) => {
+  const [recruiterName, setRecruiterName] = useState(prefill?.contactName || "");
   const [recruiterTitle, setRecruiterTitle] = useState("Technical Recruiter");
-  const [company, setCompany] = useState("");
-  const [jobTitle, setJobTitle] = useState(profile.targetTitles?.[0] || "Software Engineer");
+  const [company, setCompany] = useState(prefill?.company || "");
+  const [jobTitle, setJobTitle] = useState(prefill?.jobTitle || profile.targetTitles?.[0] || "Software Engineer");
   const [platform, setPlatform] = useState<"LinkedIn InMail" | "Email">("LinkedIn InMail");
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
   const [generatedOutreach, setGeneratedOutreach] = useState<{ subject: string; message: string } | null>(null);
+
+  React.useEffect(() => {
+    if (!prefill) return;
+    if (prefill.contactName) setRecruiterName(prefill.contactName);
+    if (prefill.company) setCompany(prefill.company);
+    if (prefill.jobTitle) setJobTitle(prefill.jobTitle);
+  }, [prefill]);
 
   const handleGenerateOutreach = async () => {
     setIsGenerating(true);

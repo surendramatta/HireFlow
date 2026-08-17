@@ -40,7 +40,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const safeApps = applications || [];
   const safeJobs = jobs || [];
 
-  const totalApplied = safeApps.filter((a) => a.status !== "saved").length;
+  const totalApplied = safeApps.filter((a) =>
+    ["applied", "screening", "interviewing", "offer", "rejected"].includes(a.status)
+  ).length;
+  const readyToSubmitCount = safeApps.filter((a) => a.status === "ready_to_submit").length;
   const interviewingCount = safeApps.filter((a) => a.status === "interviewing").length;
   const screeningCount = safeApps.filter((a) => a.status === "screening").length;
   const offerCount = safeApps.filter((a) => a.status === "offer").length;
@@ -74,8 +77,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
               Welcome back, {userName} 👋
             </h1>
             <p className="text-sm text-slate-300 max-w-2xl leading-relaxed">
-              Your AI Copilot is scanning 12+ job platforms. Your current target is{" "}
-              <span className="text-indigo-300 font-semibold">{targetTitle}</span> with a minimum match threshold of{" "}
+              Your assisted apply copilot monitors company ATS boards and remote job marketplaces. Target:{" "}
+              <span className="text-indigo-300 font-semibold">{targetTitle}</span> · min match{" "}
               <span className="text-emerald-400 font-semibold">{autoApplyConfig?.minMatchScore || 70}%</span>.
             </p>
           </div>
@@ -92,12 +95,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
               {autoApplyConfig.enabled ? (
                 <>
                   <Pause className="w-4 h-4 fill-current" />
-                  <span>Pause Autopilot</span>
+                  <span>Pause Batch Prep</span>
                 </>
               ) : (
                 <>
                   <Play className="w-4 h-4 fill-current" />
-                  <span>Resume Autopilot</span>
+                  <span>Enable Batch Prep</span>
                 </>
               )}
             </button>
@@ -134,6 +137,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
               style={{ width: `${Math.min(100, (autoApplyConfig.appliedToday / autoApplyConfig.dailyLimit) * 100)}%` }} 
             />
           </div>
+          {readyToSubmitCount > 0 && (
+            <div className="mt-2 text-[11px] text-violet-300 font-medium">
+              {readyToSubmitCount} ready to submit
+            </div>
+          )}
         </div>
 
         <div className="bg-slate-900/80 rounded-xl p-4 border border-slate-800 hover:border-slate-700 transition">

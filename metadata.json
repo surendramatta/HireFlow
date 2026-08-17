@@ -1,6 +1,6 @@
 {
   "name": "HireFlow AI",
-  "description": "Next-Gen AI Job Search & Auto-Apply Platform with ATS Resume Tailoring, Application Autopilot, Recruiter Outreach, and Mock Interview Coaching.",
+  "description": "Assisted AI job search & apply: live Greenhouse/Lever/Ashby feed, per-role cover letters & screening answers, open-portal autofill, Ready-to-Submit queue, and application tracking. Human confirms CAPTCHA/OTP/submit.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

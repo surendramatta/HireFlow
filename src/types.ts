@@ -71,7 +71,7 @@ export interface JobListing {
   salaryRange: string;
   minSalary: number;
   postedDate: string;
-  platform: "Greenhouse" | "Lever" | "Workday" | "LinkedIn" | "Indeed" | "Google Jobs" | "Hiring Cafe" | "Ashby" | "ZipRecruiter" | string;
+  platform: "Greenhouse" | "Lever" | "Ashby" | "SmartRecruiters" | "Recruitee" | "Remotive" | "RemoteOK" | "Arbeitnow" | "Jobicy" | "Himalayas" | "The Muse" | "We Work Remotely" | "Workday" | "LinkedIn" | "Indeed" | "Google Jobs" | "Hiring Cafe" | "ZipRecruiter" | string;
   matchScore: number;
   skillsRequired: string[];
   matchingSkills: string[];

@@ -3,8 +3,7 @@ import path from "path";
 import dotenv from "dotenv";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
-import { COMPANY_BOARDS } from "./server/companyBoards";
-import { fetchGreenhouse, fetchLever, fetchAshby, StandardJobListing } from "./server/jobSources";
+import { fetchAllJobBoards, StandardJobListing } from "./server/jobSources";
 
 dotenv.config();
 
@@ -338,43 +337,75 @@ app.get("/api/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
-// REAL JOB BOARD SEARCH (Greenhouse, Lever, Ashby - No fake/AI-guessed jobs)
-app.post("/api/jobs/search", async (req, res) => {
-  try {
-    const { query = "", location = "", remoteOnly = false } = req.body;
-    const queryLower = (query || "").toLowerCase().trim();
-    const locationLower = (location || "").toLowerCase().trim();
+const TECH_TITLE_RE =
+  /\b(software|engineer|developer|frontend|front-end|backend|back-end|full[\s-]?stack|sre|devops|platform|infrastructure|security engineer|ml engineer|machine learning|data engineer|data scientist|mobile engineer|ios|android|staff engineer|principal engineer|engineering manager|eng manager|swe|qa engineer|test engineer|automation engineer|site reliability|cloud engineer|systems engineer|firmware|embedded|rust|golang|typescript|react|node\.?js)\b/i;
 
-    const promises = COMPANY_BOARDS.map((board) => {
-      if (board.source === "greenhouse") return fetchGreenhouse(board);
-      if (board.source === "lever") return fetchLever(board);
-      if (board.source === "ashby") return fetchAshby(board);
-      return Promise.resolve([] as StandardJobListing[]);
-    });
+const JUNK_TITLE_RE =
+  /\b(sales|account executive|account manager|business development|bdr|sdr|marketing|brand manager|retail|store manager|cashier|waiter|barista|driver|warehouse|aml|kyc|compliance officer|risk officer|branch manager|recruiter|talent acquisition|hr generalist|people ops|customer support|call center|telemarketing|real estate|insurance agent|nurse|pharmacist|teacher|professor|attorney|paralegal|chef|cook)\b/i;
 
-    const results = await Promise.allSettled(promises);
-    let allJobs: StandardJobListing[] = [];
-    let failedSources = 0;
+function queryTokens(queryLower: string): string[] {
+  return queryLower
+    .split(/[^a-z0-9+#.]/i)
+    .map((t) => t.trim())
+    .filter((t) => t.length > 2 && !["the", "and", "for", "with", "job", "role"].includes(t));
+}
 
-    results.forEach((resItem) => {
-      if (resItem.status === "fulfilled") {
-        allJobs.push(...resItem.value);
-      } else {
-        failedSources++;
-      }
-    });
+function titleRelevance(jobTitle: string, queryLower: string): number {
+  const title = (jobTitle || "").toLowerCase();
+  if (!title) return 0;
+  if (JUNK_TITLE_RE.test(title) && !TECH_TITLE_RE.test(title)) return 0;
 
-    const filtered = allJobs.filter((job) => {
+  const tokens = queryTokens(queryLower);
+  if (!tokens.length) {
+    return TECH_TITLE_RE.test(title) ? 70 : 20;
+  }
+
+  const hit = tokens.filter((t) => title.includes(t)).length;
+  const tokenScore = Math.round((hit / tokens.length) * 80);
+  const techBonus = TECH_TITLE_RE.test(title) ? 20 : 0;
+  const exactBonus = title.includes(queryLower) ? 15 : 0;
+  return Math.min(100, tokenScore + techBonus + exactBonus);
+}
+
+function scoreAndFilterJobs(
+  allJobs: StandardJobListing[],
+  opts: {
+    queryLower: string;
+    locationLower: string;
+    remoteOnly: boolean;
+    candidateSkillsLower: string[];
+  }
+): StandardJobListing[] {
+  const { queryLower, locationLower, remoteOnly, candidateSkillsLower } = opts;
+  const wantsTech =
+    !queryLower ||
+    TECH_TITLE_RE.test(queryLower) ||
+    /\b(software|engineer|developer|swe)\b/i.test(queryLower);
+
+  return allJobs
+    .filter((job) => {
       if (remoteOnly && !job.isRemote) return false;
 
-      if (queryLower) {
-        const matchesTitle = job.title.toLowerCase().includes(queryLower);
-        const matchesCompany = job.company.toLowerCase().includes(queryLower);
-        const matchesDesc = job.description.toLowerCase().includes(queryLower);
-        const matchesSkills = job.skillsRequired.some((s) => s.toLowerCase().includes(queryLower));
-        if (!matchesTitle && !matchesCompany && !matchesDesc && !matchesSkills) {
-          return false;
+      const title = job.title || "";
+      const titleLower = title.toLowerCase();
+
+      // Drop clear non-fit roles for tech searches
+      if (wantsTech) {
+        if (JUNK_TITLE_RE.test(title) && !TECH_TITLE_RE.test(title)) return false;
+        if (!TECH_TITLE_RE.test(title)) {
+          // allow only if query tokens strongly hit the title
+          const tokens = queryTokens(queryLower);
+          const hit = tokens.filter((t) => titleLower.includes(t)).length;
+          if (!tokens.length || hit < Math.ceil(tokens.length * 0.6)) return false;
         }
+      }
+
+      if (queryLower) {
+        const rel = titleRelevance(title, queryLower);
+        const matchesCompany = job.company.toLowerCase().includes(queryLower);
+        // Prefer title relevance; don't keep roles that only match buried description text
+        if (rel < 35 && !matchesCompany) return false;
+        if (rel < 20) return false;
       }
 
       if (locationLower && locationLower !== "remote") {
@@ -383,14 +414,108 @@ app.post("/api/jobs/search", async (req, res) => {
       }
 
       return true;
+    })
+    .map((job) => {
+      const realSkills = (job.skillsRequired || []).filter(
+        (s) => s && s.toLowerCase() !== "software engineering"
+      );
+      const matchingSkills = realSkills.filter((s) =>
+        candidateSkillsLower.includes(s.toLowerCase())
+      );
+      const missingSkills = realSkills.filter(
+        (s) => !candidateSkillsLower.includes(s.toLowerCase())
+      );
+
+      const rel = titleRelevance(job.title, queryLower);
+      let skillScore = 40;
+      if (candidateSkillsLower.length > 0 && realSkills.length > 0) {
+        skillScore = Math.round((matchingSkills.length / realSkills.length) * 55);
+      } else if (candidateSkillsLower.length === 0) {
+        skillScore = 35;
+      }
+
+      const matchScore = Math.min(99, Math.max(40, Math.round(rel * 0.45 + skillScore + (matchingSkills.length > 0 ? 10 : 0))));
+
+      return {
+        ...job,
+        matchScore,
+        matchingSkills,
+        missingSkills: missingSkills.slice(0, 8),
+        skillsRequired: realSkills.length ? realSkills : job.skillsRequired,
+        companySize: job.companySize || "Unknown",
+        logoUrl: job.logoUrl || "",
+      };
+    })
+    .sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
+}
+
+/**
+ * Soft diversify: keep best matches first, but cap any one platform so the feed
+ * isn't 80 Greenhouse rows — without forcing junk from weak boards into the top.
+ */
+function diversifyByPlatform(jobs: StandardJobListing[], limit: number): StandardJobListing[] {
+  const sorted = [...jobs].sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
+  if (sorted.length <= limit) return sorted;
+
+  const maxPerPlatform = Math.max(6, Math.ceil(limit / 5));
+  const counts = new Map<string, number>();
+  const picked: StandardJobListing[] = [];
+  const deferred: StandardJobListing[] = [];
+
+  for (const job of sorted) {
+    if (picked.length >= limit) break;
+    const key = job.platform || "Other";
+    const used = counts.get(key) || 0;
+    if (used < maxPerPlatform) {
+      picked.push(job);
+      counts.set(key, used + 1);
+    } else {
+      deferred.push(job);
+    }
+  }
+
+  for (const job of deferred) {
+    if (picked.length >= limit) break;
+    picked.push(job);
+  }
+
+  return picked.sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
+}
+
+// REAL JOB BOARD SEARCH — company ATS (GH/Lever/Ashby/SmartRecruiters/Recruitee) + aggregators
+app.post("/api/jobs/search", async (req, res) => {
+  try {
+    const { query = "", location = "", remoteOnly = false, targetSkills = [], platforms = [] } = req.body;
+    const queryLower = (query || "").toLowerCase().trim();
+    const locationLower = (location || "").toLowerCase().trim();
+    const candidateSkillsLower = (targetSkills || []).map((s: string) => s.toLowerCase());
+
+    const { jobs: allJobs, failedSources, sourcesTried } = await fetchAllJobBoards({
+      query,
+      platforms: Array.isArray(platforms) ? platforms : [],
     });
 
+    const filtered = scoreAndFilterJobs(allJobs, {
+      queryLower,
+      locationLower,
+      remoteOnly: Boolean(remoteOnly),
+      candidateSkillsLower,
+    });
+
+    const diversified = diversifyByPlatform(filtered, 80);
+    const platformCounts: Record<string, number> = {};
+    for (const job of diversified) {
+      platformCounts[job.platform] = (platformCounts[job.platform] || 0) + 1;
+    }
+
     return res.json({
-      jobs: filtered.slice(0, 50),
+      jobs: diversified,
       source: "job-boards",
       totalFetched: allJobs.length,
       fetchedAt: new Date().toISOString(),
       failedSources,
+      sourcesTried,
+      platformCounts,
     });
   } catch (err: any) {
     console.error("Error searching job boards:", err);
@@ -404,61 +529,22 @@ app.post("/api/ai/search-real-jobs", async (req, res) => {
     const { query = "", location = "", platforms = [], remoteOnly = false, targetSkills = [] } = req.body;
     const queryLower = (query || "").toLowerCase().trim();
     const locationLower = (location || "").toLowerCase().trim();
-
-    const selectedPlatforms = Array.isArray(platforms) && platforms.length > 0 ? platforms : [];
-
-    const promises = COMPANY_BOARDS.filter((board) => {
-      if (selectedPlatforms.length === 0) return true;
-      return selectedPlatforms.some((p: string) => p.toLowerCase() === board.source.toLowerCase() || p.toLowerCase() === "all");
-    }).map((board) => {
-      if (board.source === "greenhouse") return fetchGreenhouse(board);
-      if (board.source === "lever") return fetchLever(board);
-      if (board.source === "ashby") return fetchAshby(board);
-      return Promise.resolve([] as StandardJobListing[]);
-    });
-
-    const results = await Promise.allSettled(promises);
-    let allJobs: StandardJobListing[] = [];
-
-    results.forEach((resItem) => {
-      if (resItem.status === "fulfilled") {
-        allJobs.push(...resItem.value);
-      }
-    });
-
     const candidateSkillsLower = (targetSkills || []).map((s: string) => s.toLowerCase());
 
-    const filtered = allJobs.filter((job) => {
-      if (remoteOnly && !job.isRemote) return false;
+    const { jobs: allJobs } = await fetchAllJobBoards({
+      query,
+      platforms: Array.isArray(platforms) ? platforms : [],
+    });
 
-      if (queryLower) {
-        const matchesTitle = job.title.toLowerCase().includes(queryLower);
-        const matchesCompany = job.company.toLowerCase().includes(queryLower);
-        const matchesDesc = job.description.toLowerCase().includes(queryLower);
-        const matchesSkills = job.skillsRequired.some((s) => s.toLowerCase().includes(queryLower));
-        if (!matchesTitle && !matchesCompany && !matchesDesc && !matchesSkills) {
-          return false;
-        }
-      }
-
-      if (locationLower && locationLower !== "remote") {
-        const matchesLoc = job.location.toLowerCase().includes(locationLower);
-        if (!matchesLoc && !job.isRemote) return false;
-      }
-
-      return true;
-    }).map((job) => {
-      // Calculate dynamic candidate match score
-      let matchScore = 78;
-      if (candidateSkillsLower.length > 0 && job.skillsRequired.length > 0) {
-        const matches = job.skillsRequired.filter((s) => candidateSkillsLower.includes(s.toLowerCase()));
-        matchScore = Math.min(98, Math.max(68, Math.round((matches.length / job.skillsRequired.length) * 100) + 20));
-      }
-      return { ...job, matchScore };
+    const filtered = scoreAndFilterJobs(allJobs, {
+      queryLower,
+      locationLower,
+      remoteOnly: Boolean(remoteOnly),
+      candidateSkillsLower,
     });
 
     // Return direct array for compatibility with JobSearch.tsx
-    return res.json(filtered.slice(0, 50));
+    return res.json(diversifyByPlatform(filtered, 80));
   } catch (err: any) {
     console.error("Error in /api/ai/search-real-jobs:", err);
     res.status(500).json({ error: "Failed to search real jobs", message: err.message });
@@ -992,9 +1078,9 @@ function generatePlaywrightScripts(params: {
   const lastName = nameParts.slice(1).join(" ") || "Doe";
   const email = candidateProfile?.email || "jane.doe@example.com";
   const phone = candidateProfile?.phone || "+1 (555) 019-2834";
-  const linkedin = candidateProfile?.linkedin || "https://linkedin.com/in/janedoe";
-  const github = candidateProfile?.github || "https://github.com/janedoe";
-  const portfolio = candidateProfile?.portfolio || "https://janedoe.dev";
+  const linkedin = candidateProfile?.linkedin || candidateProfile?.linkedInUrl || "";
+  const github = candidateProfile?.github || candidateProfile?.gitHubUrl || "";
+  const portfolio = candidateProfile?.portfolio || candidateProfile?.portfolioUrl || "";
 
   // Escape strings for code template safely
   const safeTitle = jobTitle.replace(/"/g, '\\"');
@@ -1139,7 +1225,7 @@ Platform: ${platform}
 URL: ${safeUrl}
 """
 
-async function_run():
+async def function_run():
     async with async_playwright() as p:
         print("🚀 Launching Playwright Python Browser...")
         browser = await p.chromium.launch(headless=False, slow_mo=150)
@@ -1154,7 +1240,7 @@ async function_run():
         if await page.locator("input[name*='first_name']").is_visible():
             await page.fill("input[name*='first_name']", "${firstName}")
             await page.fill("input[name*='last_name']", "${lastName}")
-        
+
         await page.fill("input[type='email']", "${email}")
         await page.fill("input[type='tel']", "${phone}")
 

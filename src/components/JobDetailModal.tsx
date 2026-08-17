@@ -396,7 +396,7 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
               }`}
             >
               <Bot className="w-4 h-4 text-amber-300 animate-bounce" />
-              <span>{isApplied ? "Already Applied" : "Auto-Apply with AI Agent (Login & Fill Forms)"}</span>
+              <span>{isApplied ? "Already Applied" : "Open Application Assistant"}</span>
               {!isApplied && <ArrowRight className="w-4 h-4 ml-1" />}
             </button>
           </div>

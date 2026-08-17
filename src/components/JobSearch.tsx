@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { JobListing, CandidateProfile, ApplicationRecord, TabType } from "../types";
 import { JobDetailModal } from "./JobDetailModal";
-import { JobApplyAgentModal } from "./JobApplyAgentModal";
+import { isValidApplyUrl } from "../lib/applyUrl";
 import { 
   Search, 
   Filter, 
@@ -25,7 +25,8 @@ import {
   Globe,
   Loader2,
   Bot,
-  Maximize2
+  Maximize2,
+  AlertTriangle
 } from "lucide-react";
 
 interface JobSearchProps {
@@ -34,7 +35,7 @@ interface JobSearchProps {
   applications: ApplicationRecord[];
   onApplyJob: (job: JobListing, tailoredCoverLetter?: string) => void;
   onSaveJob: (job: JobListing) => void;
-  onAddCustomJob?: (job: Omit<JobListing, "id">) => Promise<string>;
+  onAddCustomJob?: (job: Omit<JobListing, "id"> & { id?: string }) => Promise<string>;
   selectedJob: JobListing | null;
   setSelectedJob: (job: JobListing | null) => void;
   setActiveTab: (tab: TabType) => void;
@@ -53,6 +54,9 @@ export const JobSearch: React.FC<JobSearchProps> = ({
   selectedJob,
   setSelectedJob,
   setActiveTab,
+  isSearchingJobs = false,
+  setIsSearchingJobs,
+  setJobs,
 }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedPlatform, setSelectedPlatform] = useState<string>("all");
@@ -106,6 +110,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({
 
   const handleSearchRealWebJobs = async () => {
     setIsSearchingWeb(true);
+    setIsSearchingJobs?.(true);
     try {
       const queryToSearch = searchQuery.trim() || (profile.targetTitles && profile.targetTitles[0]) || "Software Engineer";
       const res = await fetch("/api/ai/search-real-jobs", {
@@ -122,16 +127,26 @@ export const JobSearch: React.FC<JobSearchProps> = ({
       if (res.ok) {
         const liveJobs: JobListing[] = await res.json();
         if (Array.isArray(liveJobs) && liveJobs.length > 0 && onAddCustomJob) {
-          for (const j of liveJobs) {
-            const { id, ...jobData } = j;
-            await onAddCustomJob(jobData);
+          const validJobs = liveJobs.filter((j) => isValidApplyUrl(j.applyUrl));
+          for (const j of validJobs) {
+            await onAddCustomJob(j);
           }
+          setJobs?.(validJobs);
+          const platformsHit = [...new Set(validJobs.map((j) => j.platform).filter(Boolean))];
+          setApplySuccessMessage(
+            `Loaded ${validJobs.length} live jobs across ${platformsHit.length} boards: ${platformsHit.slice(0, 6).join(", ")}${platformsHit.length > 6 ? "…" : ""}`
+          );
+          setTimeout(() => setApplySuccessMessage(null), 6000);
+        } else if (Array.isArray(liveJobs) && liveJobs.length === 0) {
+          setApplySuccessMessage("No live openings matched — try All Platforms or a broader title.");
+          setTimeout(() => setApplySuccessMessage(null), 5000);
         }
       }
     } catch (err) {
       console.error("Error searching live jobs:", err);
     } finally {
       setIsSearchingWeb(false);
+      setIsSearchingJobs?.(false);
     }
   };
 
@@ -153,9 +168,8 @@ export const JobSearch: React.FC<JobSearchProps> = ({
   const [aiScreeningAnswers, setAiScreeningAnswers] = useState<Record<string, string> | null>(null);
   const [applySuccessMessage, setApplySuccessMessage] = useState<string | null>(null);
 
-  // Full-Screen Job Modal & Autonomous Application Agent Modals
+  // Full-Screen Job Modal
   const [viewingDetailJob, setViewingDetailJob] = useState<JobListing | null>(null);
-  const [applyingAgentJob, setApplyingAgentJob] = useState<JobListing | null>(null);
 
   const handleAddJobSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -254,6 +268,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({
 
   const [resumeFilterOnly, setResumeFilterOnly] = useState(false);
   const [hideAppliedFilter, setHideAppliedFilter] = useState<boolean>(true);
+  const [requireApplyUrl, setRequireApplyUrl] = useState(true);
 
   const isApplied = (job: JobListing | string) => {
     if (!job) return false;
@@ -292,8 +307,9 @@ export const JobSearch: React.FC<JobSearchProps> = ({
       const matchesMatchScore = job.matchScore >= minMatchFilter;
 
       const matchesResumeFilter = !resumeFilterOnly || ((job.matchingSkills || []).length > 0 || job.matchScore >= 80);
+      const matchesApplyUrl = !requireApplyUrl || isValidApplyUrl(job.applyUrl);
 
-      return matchesAppliedFilter && matchesQuery && matchesPlatform && matchesRemote && matchesMatchScore && matchesResumeFilter;
+      return matchesAppliedFilter && matchesQuery && matchesPlatform && matchesRemote && matchesMatchScore && matchesResumeFilter && matchesApplyUrl;
     })
     .sort((a, b) => b.matchScore - a.matchScore);
 
@@ -356,11 +372,18 @@ export const JobSearch: React.FC<JobSearchProps> = ({
   };
 
   const handleApplyClick = (job: JobListing) => {
-    setApplyingAgentJob(job);
+    onApplyJob(job);
   };
 
   return (
     <div className="space-y-6">
+      {(isSearchingJobs || isSearchingWeb) && (
+        <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-4 py-3 flex items-center gap-3 text-xs text-indigo-200">
+          <Loader2 className="w-4 h-4 animate-spin text-indigo-400 shrink-0" />
+          <span>Scanning company ATS boards and job marketplaces for live openings...</span>
+        </div>
+      )}
+
       {/* Tsenta-Style Instant Job URL / Description Auto-Apply Importer */}
       <div className="bg-gradient-to-r from-indigo-950/80 via-slate-900/90 to-purple-950/80 rounded-2xl p-5 border border-indigo-500/30 shadow-xl space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -370,18 +393,18 @@ export const JobSearch: React.FC<JobSearchProps> = ({
             </span>
             <div>
               <h2 className="text-sm font-extrabold text-white flex items-center space-x-2">
-                <span>Instant Job Link Importer & AI Auto-Apply</span>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-400/20 text-amber-300 border border-amber-400/30">
-                  Tsenta Auto-Pilot
+                <span>Import Job Link</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-700/80 text-slate-300 border border-slate-600/50">
+                  Assisted Apply
                 </span>
               </h2>
               <p className="text-xs text-slate-300">
-                Paste any job vacancy URL (LinkedIn, Greenhouse, Lever, Workday, Indeed) or raw job description text.
+                Paste any ATS or marketplace job URL — or paste the raw job description.
               </p>
             </div>
           </div>
           <span className="text-[11px] text-indigo-300/80 font-mono hidden md:inline">
-            Supports Greenhouse • Lever • Workday • LinkedIn
+            GH • Lever • Ashby • Remotive • RemoteOK + more
           </span>
         </div>
 
@@ -409,7 +432,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({
             ) : (
               <>
                 <Zap className="w-4 h-4 text-amber-300 fill-amber-300" />
-                <span>Import & Auto-Apply</span>
+                <span>Import & Prep Apply</span>
               </>
             )}
           </button>
@@ -432,7 +455,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({
               <span>Job Feed & AI Match Engine</span>
             </h1>
             <p className="text-xs text-slate-400 mt-1">
-              Aggregated live vacancies across LinkedIn, Greenhouse, Lever, Workday & Google Jobs with real-time match scoring.
+              Live vacancies from company ATS boards and remote job marketplaces, with resume match scoring.
             </p>
           </div>
 
@@ -460,7 +483,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({
               onClick={handleSearchRealWebJobs}
               disabled={isSearchingWeb}
               className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-xs font-bold text-white transition flex items-center space-x-1.5 shrink-0 shadow-lg shadow-indigo-600/25"
-              title="Search active live jobs on LinkedIn, Indeed, Google Jobs, Workday & Greenhouse"
+              title="Search all connected job boards and ATS company pages"
             >
               {isSearchingWeb ? (
                 <>
@@ -492,7 +515,21 @@ export const JobSearch: React.FC<JobSearchProps> = ({
             <span className="text-slate-400 flex items-center mr-1 font-semibold text-[11px]">
               <Filter className="w-3.5 h-3.5 mr-1 text-indigo-400" /> Platform:
             </span>
-            {["all", "LinkedIn", "Indeed", "Google Jobs", "Hiring Cafe", "Workday", "Greenhouse", "Lever", "Ashby"].map((platform) => (
+            {[
+              "all",
+              "Greenhouse",
+              "Lever",
+              "Ashby",
+              "SmartRecruiters",
+              "Recruitee",
+              "Remotive",
+              "RemoteOK",
+              "Arbeitnow",
+              "Jobicy",
+              "Himalayas",
+              "The Muse",
+              "We Work Remotely",
+            ].map((platform) => (
               <button
                 key={platform}
                 onClick={() => setSelectedPlatform(platform)}
@@ -525,6 +562,20 @@ export const JobSearch: React.FC<JobSearchProps> = ({
                   {(applications || []).filter((a) => a.status !== "saved").length}
                 </span>
               )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setRequireApplyUrl(!requireApplyUrl)}
+              className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition flex items-center space-x-1.5 cursor-pointer ${
+                requireApplyUrl
+                  ? "bg-cyan-500/20 border-cyan-500/50 text-cyan-300"
+                  : "bg-slate-950/80 border-slate-700 text-slate-400 hover:text-slate-200"
+              }`}
+              title="Hide listings without a working career-page apply link"
+            >
+              <ExternalLink className={`w-3.5 h-3.5 ${requireApplyUrl ? "text-cyan-400" : "text-slate-400"}`} />
+              <span>Valid Apply Link Only</span>
             </button>
 
             <button
@@ -582,7 +633,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({
               <div>
                 <p className="text-sm text-slate-200 font-bold">No active jobs in your current feed.</p>
                 <p className="text-xs text-slate-400 mt-1">
-                  Search live vacancies across LinkedIn, Indeed, Google Jobs & Workday or add a direct job link.
+                  Search live openings across all boards or paste a direct job link.
                 </p>
               </div>
               <div className="flex flex-col sm:flex-row items-center justify-center gap-2 pt-1">
@@ -754,7 +805,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({
                       }`}
                     >
                       <Bot className="w-4 h-4 text-amber-300 animate-bounce" />
-                      <span>{isApplied(activeJob) ? "Applied" : "Auto-Apply Agent"}</span>
+                      <span>{isApplied(activeJob) ? "Applied" : "Application Assistant"}</span>
                     </button>
 
                     <button
@@ -766,7 +817,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({
                       <span className="hidden sm:inline">Full Description</span>
                     </button>
 
-                    {activeJob.applyUrl && (
+                    {isValidApplyUrl(activeJob.applyUrl) && (
                       <a
                         href={activeJob.applyUrl}
                         target="_blank"
@@ -777,6 +828,15 @@ export const JobSearch: React.FC<JobSearchProps> = ({
                         <ExternalLink className="w-3.5 h-3.5 text-indigo-400" />
                         <span className="hidden md:inline">Open Career URL</span>
                       </a>
+                    )}
+                    {!isValidApplyUrl(activeJob.applyUrl) && (
+                      <span
+                        className="px-3 py-2 rounded-xl bg-rose-500/10 text-rose-300 text-[11px] font-bold border border-rose-500/30 flex items-center gap-1.5"
+                        title="This listing has no working apply link"
+                      >
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                        Broken apply link
+                      </span>
                     )}
 
                     <button
@@ -932,7 +992,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({
               </div>
               <h3 className="text-lg font-bold text-white">Add Custom Real Job Listing</h3>
               <p className="text-xs text-slate-400">
-                Paste any active vacancy from LinkedIn, Greenhouse, Lever, or Workday to track & auto-apply in real-time.
+                Paste an active ATS or marketplace vacancy URL to track & apply.
               </p>
             </div>
 
@@ -982,9 +1042,18 @@ export const JobSearch: React.FC<JobSearchProps> = ({
                   >
                     <option value="Greenhouse">Greenhouse</option>
                     <option value="Lever">Lever</option>
-                    <option value="LinkedIn">LinkedIn</option>
+                    <option value="Ashby">Ashby</option>
+                    <option value="SmartRecruiters">SmartRecruiters</option>
+                    <option value="Recruitee">Recruitee</option>
+                    <option value="Remotive">Remotive</option>
+                    <option value="RemoteOK">RemoteOK</option>
+                    <option value="Arbeitnow">Arbeitnow</option>
+                    <option value="Jobicy">Jobicy</option>
+                    <option value="Himalayas">Himalayas</option>
+                    <option value="The Muse">The Muse</option>
+                    <option value="We Work Remotely">We Work Remotely</option>
                     <option value="Workday">Workday</option>
-                    <option value="Google Jobs">Google Jobs</option>
+                    <option value="LinkedIn">LinkedIn</option>
                     <option value="Indeed">Indeed</option>
                   </select>
                 </div>
@@ -1053,23 +1122,9 @@ export const JobSearch: React.FC<JobSearchProps> = ({
           onClose={() => setViewingDetailJob(null)}
           onStartAutoApply={(job) => {
             setViewingDetailJob(null);
-            setApplyingAgentJob(job);
+            onApplyJob(job);
           }}
           onSaveJob={onSaveJob}
-        />
-      )}
-
-      {/* Modal 2: Autonomous Agent Auto-Apply Login & Form Submission */}
-      {applyingAgentJob && (
-        <JobApplyAgentModal
-          job={applyingAgentJob}
-          profile={profile}
-          onClose={() => setApplyingAgentJob(null)}
-          onCompleteApply={(job, coverLetter) => {
-            onApplyJob(job, coverLetter);
-            setApplySuccessMessage(`Applied & tracked ${job.company}! Form submission completed.`);
-            setTimeout(() => setApplySuccessMessage(null), 4000);
-          }}
         />
       )}
     </div>

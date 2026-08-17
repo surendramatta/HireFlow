@@ -51,15 +51,27 @@ export const subscribeToJobs = (onUpdate: (jobs: JobListing[]) => void) => {
   });
 };
 
-export const addCustomJobToDb = async (job: Omit<JobListing, "id">): Promise<string> => {
-  const newJobRef = doc(collection(db, "jobs"));
+export const addCustomJobToDb = async (
+  job: Omit<JobListing, "id"> & { id?: string }
+): Promise<string> => {
+  // Prefer stable board ids (greenhouse-*, lever-*, ashby-*) so refreshes upsert instead of duplicating
+  const preferredId =
+    job.id && /^(greenhouse|lever|ashby|imported)-/i.test(job.id) ? job.id : undefined;
+  const newJobRef = preferredId ? doc(db, "jobs", preferredId) : doc(collection(db, "jobs"));
   const newJob: JobListing = {
     ...job,
     id: newJobRef.id,
     logoUrl: job.logoUrl || "",
+    companySize: job.companySize || "Unknown",
+    matchingSkills: job.matchingSkills || [],
+    missingSkills: job.missingSkills || [],
   };
-  await setDoc(newJobRef, sanitizeForFirestore(newJob));
+  await setDoc(newJobRef, sanitizeForFirestore(newJob), { merge: true });
   return newJobRef.id;
+};
+
+export const deleteJobFromDb = async (jobId: string) => {
+  await deleteDoc(doc(db, "jobs", jobId));
 };
 
 // -------------------------------------------------------------

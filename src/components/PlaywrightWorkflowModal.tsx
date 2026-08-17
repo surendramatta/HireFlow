@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { JobListing, CandidateProfile } from "../types";
+import { resolveApplyUrl } from "../lib/applyUrl";
 import { 
   Bot, 
   Code, 
@@ -72,7 +73,7 @@ export const PlaywrightWorkflowModal: React.FC<PlaywrightWorkflowModalProps> = (
           body: JSON.stringify({
             jobTitle: job.title,
             jobCompany: job.company,
-            applyUrl: job.applyUrl || `https://boards.greenhouse.io/${job.company.toLowerCase().replace(/\s+/g, "")}/jobs/101`,
+            applyUrl: resolveApplyUrl(job) || job.applyUrl || "",
             platform: job.platform || "Greenhouse",
             candidateProfile: profile,
             coverLetter,
@@ -125,7 +126,7 @@ export const PlaywrightWorkflowModal: React.FC<PlaywrightWorkflowModalProps> = (
   };
 
   const handleFinalSubmit = async () => {
-    // 1. Copy tailored cover letter to clipboard for 1-click paste
+    // Copy materials, open real portal, stage as Ready — do NOT claim Applied
     if (coverLetter) {
       try {
         await navigator.clipboard.writeText(coverLetter);
@@ -134,11 +135,14 @@ export const PlaywrightWorkflowModal: React.FC<PlaywrightWorkflowModalProps> = (
       }
     }
 
-    // 2. Open live official job application portal in a new browser tab
-    const urlToOpen = job.applyUrl || `https://boards.greenhouse.io/${job.company.toLowerCase().replace(/\s+/g, "")}/jobs/101`;
+    const urlToOpen = resolveApplyUrl(job);
+    if (!urlToOpen) {
+      alert("No valid apply URL for this job. Search live jobs for a real career-page link.");
+      return;
+    }
     window.open(urlToOpen, "_blank", "noopener,noreferrer");
 
-    // 3. Confirm submission record in database state
+    // Caller should treat this as Ready to Submit / open portal — not silent Applied
     await onConfirmApply(job, coverLetter, screeningAnswers);
     onClose();
   };
@@ -155,9 +159,9 @@ export const PlaywrightWorkflowModal: React.FC<PlaywrightWorkflowModalProps> = (
             </div>
             <div>
               <div className="flex items-center space-x-2">
-                <h2 className="text-lg font-bold text-white">Playwright Auto-Apply Engine</h2>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                  {job.platform || "Greenhouse"} Automation
+                <h2 className="text-lg font-bold text-white">Playwright Script Export</h2>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-slate-700 text-slate-300 border border-slate-600">
+                  {job.platform || "Greenhouse"} · local scripts
                 </span>
               </div>
               <p className="text-xs text-slate-400">
@@ -456,7 +460,7 @@ export const PlaywrightWorkflowModal: React.FC<PlaywrightWorkflowModalProps> = (
         <div className="p-4 border-t border-slate-800 bg-slate-950 flex items-center justify-between gap-3">
           <div className="text-xs text-slate-400 flex items-center space-x-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-            <span>Ready for 1-Click Submission</span>
+            <span>Export scripts or open the real portal — you submit</span>
           </div>
 
           <div className="flex items-center space-x-3">
@@ -471,8 +475,8 @@ export const PlaywrightWorkflowModal: React.FC<PlaywrightWorkflowModalProps> = (
               onClick={handleFinalSubmit}
               className="flex items-center space-x-2 px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-xl transition shadow-lg shadow-emerald-500/20"
             >
-              <Bot className="w-4 h-4" />
-              <span>Submit Application via Playwright</span>
+              <ExternalLink className="w-4 h-4" />
+              <span>Open Portal & Stage Ready</span>
             </button>
           </div>
         </div>
