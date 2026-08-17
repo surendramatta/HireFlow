@@ -35,7 +35,7 @@ export const initialJobs: JobListing[] = [];
 export const initialApplications: ApplicationRecord[] = [];
 
 export const initialAutoApplyConfig: AutoApplyConfig = {
-  enabled: true,
+  enabled: false,
   dailyLimit: 20,
   appliedToday: 0,
   lastResetDate: new Date().toISOString().split("T")[0],

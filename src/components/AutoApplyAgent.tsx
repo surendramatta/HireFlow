@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { AutoApplyConfig, AutoApplyLog, JobListing, ApplicationRecord, CandidateProfile } from "../types";
 import { PlaywrightWorkflowModal } from "./PlaywrightWorkflowModal";
 import { BookmarkletModal } from "./BookmarkletModal";
+import { isProfileReady, profileReadyGaps } from "../lib/profileReady";
 import { 
   Bot, 
   Play, 
@@ -84,7 +85,21 @@ export const AutoApplyAgent: React.FC<AutoApplyAgentProps> = ({
   const eligibleJobsCount = highAffinityJobs.length;
 
   const handleRunBatchAgent = async () => {
-    const jobsToProcess = (highAffinityJobs.length > 0 ? highAffinityJobs : unappliedJobs).slice(0, batchCount);
+    if (!isProfileReady(profile)) {
+      alert(`Finish your profile first: ${profileReadyGaps(profile).join(", ")}`);
+      return;
+    }
+
+    if ((autoApplyConfig.appliedToday || 0) >= (autoApplyConfig.dailyLimit || 20)) {
+      alert(`Daily applied limit reached (${autoApplyConfig.dailyLimit}). Raise the limit in settings or continue tomorrow.`);
+      return;
+    }
+
+    const remainingQuota = Math.max(1, (autoApplyConfig.dailyLimit || 20) - (autoApplyConfig.appliedToday || 0));
+    const jobsToProcess = (highAffinityJobs.length > 0 ? highAffinityJobs : unappliedJobs).slice(
+      0,
+      Math.min(batchCount, remainingQuota)
+    );
 
     if (jobsToProcess.length === 0) {
       alert("All jobs in your feed have already been applied to! Search or import new jobs in the Job Search tab.");
@@ -214,15 +229,15 @@ export const AutoApplyAgent: React.FC<AutoApplyAgentProps> = ({
                   : "bg-slate-800 text-slate-400"
               }`}
             >
-              Autopilot Agent Status: {autoApplyConfig.enabled ? "RUNNING" : "PAUSED"}
+              Batch Prep: {autoApplyConfig.enabled ? "ENABLED" : "PAUSED"}
             </span>
           </div>
           <h1 className="text-xl font-extrabold text-white flex items-center space-x-2">
             <Bot className="w-5 h-5 text-emerald-400" />
-            <span>HireFlow Autopilot & Batch Application Engine</span>
+            <span>Batch Application Prep</span>
           </h1>
           <p className="text-xs text-slate-400">
-            Matches jobs to your profile, generates tailored cover letters via Gemini, and queues them as Ready to Submit for honest portal application.
+            Stages tailored cover letters and screening answers as Ready to Submit. You open the ATS, autofill, and confirm after you submit.
           </p>
         </div>
 
@@ -236,7 +251,7 @@ export const AutoApplyAgent: React.FC<AutoApplyAgentProps> = ({
             }`}
           >
             {autoApplyConfig.enabled ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-            <span>{autoApplyConfig.enabled ? "Pause Autopilot" : "Activate Autopilot"}</span>
+            <span>{autoApplyConfig.enabled ? "Pause Batch Prep" : "Enable Batch Prep"}</span>
           </button>
 
           <div className="flex items-center space-x-2 bg-slate-950 p-1 rounded-xl border border-slate-800">
@@ -616,7 +631,7 @@ export const AutoApplyAgent: React.FC<AutoApplyAgentProps> = ({
             </div>
 
             <div className="px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-mono">
-              Supported ATS: Greenhouse, Lever, Ashby, Workday, LinkedIn
+              Supported ATS autofill: Greenhouse, Lever, Ashby (bookmarklet / Playwright export)
             </div>
           </div>
 

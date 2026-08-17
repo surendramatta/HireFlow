@@ -127,12 +127,11 @@ export const JobSearch: React.FC<JobSearchProps> = ({
       if (res.ok) {
         const liveJobs: JobListing[] = await res.json();
         if (Array.isArray(liveJobs) && liveJobs.length > 0 && onAddCustomJob) {
-          for (const j of liveJobs) {
-            if (!isValidApplyUrl(j.applyUrl)) continue;
-            // Keep board id so Firestore upserts the same posting
+          const validJobs = liveJobs.filter((j) => isValidApplyUrl(j.applyUrl));
+          for (const j of validJobs) {
             await onAddCustomJob(j);
           }
-          setJobs?.(liveJobs.filter((j) => isValidApplyUrl(j.applyUrl)));
+          setJobs?.(validJobs);
         }
       }
     } catch (err) {
@@ -392,12 +391,12 @@ export const JobSearch: React.FC<JobSearchProps> = ({
                 </span>
               </h2>
               <p className="text-xs text-slate-300">
-                Paste any job vacancy URL (LinkedIn, Greenhouse, Lever, Workday, Indeed) or raw job description text.
+                Paste a Greenhouse, Lever, Ashby, or Workday job URL — or paste the raw job description.
               </p>
             </div>
           </div>
           <span className="text-[11px] text-indigo-300/80 font-mono hidden md:inline">
-            Supports Greenhouse • Lever • Workday • LinkedIn
+            Greenhouse • Lever • Ashby
           </span>
         </div>
 
@@ -448,7 +447,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({
               <span>Job Feed & AI Match Engine</span>
             </h1>
             <p className="text-xs text-slate-400 mt-1">
-              Aggregated live vacancies across LinkedIn, Greenhouse, Lever, Workday & Google Jobs with real-time match scoring.
+              Live vacancies from Greenhouse, Lever & Ashby with resume match scoring.
             </p>
           </div>
 
@@ -476,7 +475,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({
               onClick={handleSearchRealWebJobs}
               disabled={isSearchingWeb}
               className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-xs font-bold text-white transition flex items-center space-x-1.5 shrink-0 shadow-lg shadow-indigo-600/25"
-              title="Search active live jobs on LinkedIn, Indeed, Google Jobs, Workday & Greenhouse"
+              title="Search Greenhouse, Lever, and Ashby company boards"
             >
               {isSearchingWeb ? (
                 <>
@@ -508,7 +507,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({
             <span className="text-slate-400 flex items-center mr-1 font-semibold text-[11px]">
               <Filter className="w-3.5 h-3.5 mr-1 text-indigo-400" /> Platform:
             </span>
-            {["all", "LinkedIn", "Indeed", "Google Jobs", "Hiring Cafe", "Workday", "Greenhouse", "Lever", "Ashby"].map((platform) => (
+            {["all", "Greenhouse", "Lever", "Ashby"].map((platform) => (
               <button
                 key={platform}
                 onClick={() => setSelectedPlatform(platform)}
@@ -612,7 +611,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({
               <div>
                 <p className="text-sm text-slate-200 font-bold">No active jobs in your current feed.</p>
                 <p className="text-xs text-slate-400 mt-1">
-                  Search live vacancies across LinkedIn, Indeed, Google Jobs & Workday or add a direct job link.
+                  Search live Greenhouse / Lever / Ashby openings or paste a direct job link.
                 </p>
               </div>
               <div className="flex flex-col sm:flex-row items-center justify-center gap-2 pt-1">
@@ -971,7 +970,7 @@ export const JobSearch: React.FC<JobSearchProps> = ({
               </div>
               <h3 className="text-lg font-bold text-white">Add Custom Real Job Listing</h3>
               <p className="text-xs text-slate-400">
-                Paste any active vacancy from LinkedIn, Greenhouse, Lever, or Workday to track & auto-apply in real-time.
+                Paste an active Greenhouse, Lever, Ashby, or Workday vacancy URL to track & apply.
               </p>
             </div>
 

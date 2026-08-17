@@ -434,8 +434,8 @@ export const AssistedApplyModal: React.FC<Props> = ({
           screeningAnswers={screeningAnswers}
           onClose={() => setShowPlaywrightModal(false)}
           onConfirmApply={(j, cl, sa) => {
-            onConfirmSubmitted(j, cl || "", sa);
-            onClose();
+            if (onSaveReadyToSubmit) onSaveReadyToSubmit(j, cl || "", sa);
+            setShowPlaywrightModal(false);
           }}
         />
       )}

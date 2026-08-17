@@ -18,7 +18,6 @@ import {
   addAutoApplyLogToDb, 
   updateAutoApplyConfigInDb, 
   addCustomJobToDb,
-  deleteJobFromDb,
 } from "./services/firestoreService";
 
 import { Navbar } from "./components/Navbar";
@@ -31,12 +30,17 @@ import { OutreachStudio } from "./components/OutreachStudio";
 import { InterviewPrep } from "./components/InterviewPrep";
 import { AnalyticsView } from "./components/AnalyticsView";
 import { AssistedApplyModal } from "./components/AssistedApplyModal";
+import { OnboardingWizard } from "./components/OnboardingWizard";
+import { ReadyQueue } from "./components/ReadyQueue";
+import { isProfileReady } from "./lib/profileReady";
 import { AlertCircle, Sparkles } from "lucide-react";
 
 const LOCAL_STORAGE_APPS_KEY = "hireflow_guest_applications";
 const LOCAL_STORAGE_LOGS_KEY = "hireflow_guest_logs";
 const LOCAL_STORAGE_CFG_KEY = "hireflow_guest_config";
 const LOCAL_STORAGE_SAVED_KEY = "hireflow_guest_saved_jobs";
+const LOCAL_STORAGE_JOBS_KEY = "hireflow_guest_jobs";
+const LOCAL_STORAGE_ONBOARD_KEY = "hireflow_onboarding_done";
 
 export default function App() {
   return (
@@ -86,11 +90,15 @@ function MainAppContent() {
   const [assistedApplyJob, setAssistedApplyJob] = useState<JobListing | null>(null);
   const [isSearchingJobs, setIsSearchingJobs] = useState<boolean>(false);
   const [outreachPrefill, setOutreachPrefill] = useState<{ company?: string; jobTitle?: string; contactName?: string } | null>(null);
+  const [onboardingDismissed, setOnboardingDismissed] = useState(() => {
+    try {
+      return localStorage.getItem(LOCAL_STORAGE_ONBOARD_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
 
-  const needsOnboarding =
-    !profile.fullName?.trim() ||
-    !(profile.skills && profile.skills.length > 0) ||
-    !profile.resumeText?.trim();
+  const needsOnboarding = !onboardingDismissed && !isProfileReady(profile);
 
   // 1. Quota Reset Check (Resets appliedToday on new day)
   useEffect(() => {
@@ -112,44 +120,83 @@ function MainAppContent() {
     }
   }, [user, autoApplyConfig.lastResetDate]);
 
-  // 2. Subscribe to Jobs & Auto-fetch Real Jobs from Greenhouse/Lever/Ashby if DB is empty
+  // 2. Jobs feed: Firestore when signed in; local guest cache + live search otherwise
   useEffect(() => {
     let initialSearchAttempted = false;
+    let cancelled = false;
+
+    const seedJobs = async () => {
+      if (initialSearchAttempted) return;
+      initialSearchAttempted = true;
+      setIsSearchingJobs(true);
+      try {
+        const res = await postJson<{ jobs: JobListing[] }>("/api/jobs/search", {
+          query: profile.targetTitles?.[0] || "Software Engineer",
+          location: profile.preferredLocation || "Remote",
+          remoteOnly: profile.remoteOnly ?? true,
+          targetSkills: profile.skills || [],
+        });
+        const valid = (res.jobs || [])
+          .filter((j) => isValidApplyUrl(j.applyUrl))
+          .slice(0, 15)
+          .map((j) =>
+            withJobDefaults({
+              ...j,
+              ...enrichJobWithMatch(j, profile),
+            })
+          );
+
+        if (cancelled || valid.length === 0) return;
+
+        if (user) {
+          for (const j of valid) {
+            await addCustomJobToDb(j);
+          }
+        } else {
+          setJobs(valid as JobListing[]);
+          try {
+            localStorage.setItem(LOCAL_STORAGE_JOBS_KEY, JSON.stringify(valid));
+          } catch {}
+        }
+      } catch (err) {
+        console.error("Initial real job board search notice:", err);
+      } finally {
+        if (!cancelled) setIsSearchingJobs(false);
+      }
+    };
+
+    if (!user) {
+      try {
+        const saved = localStorage.getItem(LOCAL_STORAGE_JOBS_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setJobs(parsed);
+            return () => {
+              cancelled = true;
+            };
+          }
+        }
+      } catch {}
+      seedJobs();
+      return () => {
+        cancelled = true;
+      };
+    }
 
     const unsubscribe = subscribeToJobs(async (liveJobs) => {
-      setJobs(liveJobs);
-
-      if (liveJobs.length === 0 && !initialSearchAttempted) {
-        initialSearchAttempted = true;
-        setIsSearchingJobs(true);
-        try {
-          const res = await postJson<{ jobs: JobListing[] }>("/api/jobs/search", {
-            query: profile.targetTitles?.[0] || "Software Engineer",
-            location: profile.preferredLocation || "Remote",
-            remoteOnly: profile.remoteOnly ?? true,
-            targetSkills: profile.skills || [],
-          });
-          if (res.jobs && res.jobs.length > 0) {
-            for (const j of res.jobs.slice(0, 15)) {
-              if (!isValidApplyUrl(j.applyUrl)) continue;
-              await addCustomJobToDb(
-                withJobDefaults({
-                  ...j,
-                  ...enrichJobWithMatch(j, profile),
-                })
-              );
-            }
-          }
-        } catch (err) {
-          console.error("Initial real job board search notice:", err);
-        } finally {
-          setIsSearchingJobs(false);
-        }
+      const validLive = liveJobs.filter((j) => isValidApplyUrl(j.applyUrl));
+      setJobs(validLive.length > 0 ? validLive : liveJobs);
+      if (liveJobs.length === 0) {
+        await seedJobs();
       }
     });
 
-    return () => unsubscribe();
-  }, [profile.targetTitles, profile.preferredLocation, profile.skills, profile.remoteOnly]);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [user, profile.targetTitles, profile.preferredLocation, profile.skills, profile.remoteOnly]);
 
   // 3. Subscribe to Realtime Applications & Migrate Local Guest Applications when logging in
   useEffect(() => {
@@ -411,11 +458,23 @@ function MainAppContent() {
       ...enrichJobWithMatch(newJobData, profile),
     };
     if (!isValidApplyUrl(enriched.applyUrl)) {
-      // Still allow manual imports, but keep empty applyUrl rather than inventing a 404 URL
       enriched.applyUrl = enriched.applyUrl?.startsWith("http") ? enriched.applyUrl : "";
     }
-    const newId = await addCustomJobToDb(enriched);
-    return newId;
+
+    if (user) {
+      return await addCustomJobToDb(enriched);
+    }
+
+    const id = enriched.id || `local-${Date.now()}`;
+    const full = { ...enriched, id } as JobListing;
+    setJobs((prev) => {
+      const next = [full, ...prev.filter((j) => j.id !== id && j.applyUrl !== full.applyUrl)];
+      try {
+        localStorage.setItem(LOCAL_STORAGE_JOBS_KEY, JSON.stringify(next.slice(0, 80)));
+      } catch {}
+      return next;
+    });
+    return id;
   };
 
   if (loading) {
@@ -429,6 +488,27 @@ function MainAppContent() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased selection:bg-indigo-500 selection:text-white">
+      {needsOnboarding && (
+        <OnboardingWizard
+          profile={profile}
+          onComplete={async (updates) => {
+            await updateProfileInDb(updates);
+            setOnboardingDismissed(true);
+            try {
+              localStorage.setItem(LOCAL_STORAGE_ONBOARD_KEY, "1");
+            } catch {}
+            setActiveTab("jobs");
+          }}
+          onSkipToResume={() => {
+            setOnboardingDismissed(true);
+            try {
+              localStorage.setItem(LOCAL_STORAGE_ONBOARD_KEY, "1");
+            } catch {}
+            setActiveTab("resume");
+          }}
+        />
+      )}
+
       <Navbar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -439,14 +519,14 @@ function MainAppContent() {
       />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {needsOnboarding && (
+        {!isProfileReady(profile) && !needsOnboarding && (
           <div className="mb-6 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-start gap-3">
               <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
               <div>
-                <p className="text-sm font-semibold text-amber-200">Finish setting up your candidate profile</p>
+                <p className="text-sm font-semibold text-amber-200">Profile still incomplete</p>
                 <p className="text-xs text-amber-200/80 mt-0.5">
-                  Add your name, skills, and resume so match scores, cover letters, and autopilot can tailor applications accurately.
+                  Add skills and a target title (and ideally a resume) so match scores and cover letters are accurate.
                 </p>
               </div>
             </div>
@@ -455,24 +535,33 @@ function MainAppContent() {
               className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition shrink-0"
             >
               <Sparkles className="w-3.5 h-3.5" />
-              Complete Resume AI Setup
+              Open Resume AI
             </button>
           </div>
         )}
 
         {activeTab === "dashboard" && (
-          <Dashboard
-            jobs={jobs}
-            applications={applications}
-            autoApplyConfig={autoApplyConfig}
-            profile={profile}
-            toggleAutopilot={toggleAutopilot}
-            setActiveTab={setActiveTab}
-            setSelectedJob={(j) => {
-              setSelectedJob(j);
-              setActiveTab("jobs");
-            }}
-          />
+          <div className="space-y-6">
+            <Dashboard
+              jobs={jobs}
+              applications={applications}
+              autoApplyConfig={autoApplyConfig}
+              profile={profile}
+              toggleAutopilot={toggleAutopilot}
+              setActiveTab={setActiveTab}
+              setSelectedJob={(j) => {
+                setSelectedJob(j);
+                setActiveTab("jobs");
+              }}
+            />
+            <ReadyQueue
+              applications={applications}
+              jobs={jobs}
+              onOpenApply={handleOpenAssistedApply}
+              onMarkApplied={(appId) => handleUpdateApplicationStatus(appId, "applied")}
+              onSkip={(appId) => handleUpdateApplicationStatus(appId, "rejected")}
+            />
+          </div>
         )}
 
         {activeTab === "jobs" && (
@@ -507,48 +596,65 @@ function MainAppContent() {
         )}
 
         {activeTab === "autoapply" && (
-          <AutoApplyAgent
-            autoApplyConfig={autoApplyConfig}
-            setAutoApplyConfig={(cfg) => {
-              if (typeof cfg === "function") {
-                const updated = cfg(autoApplyConfig);
-                setAutoApplyConfig(updated);
-                if (user) updateAutoApplyConfigInDb(user.uid, updated);
-                else { try { localStorage.setItem(LOCAL_STORAGE_CFG_KEY, JSON.stringify(updated)); } catch {} }
-              } else {
-                setAutoApplyConfig(cfg);
-                if (user) updateAutoApplyConfigInDb(user.uid, cfg);
-                else { try { localStorage.setItem(LOCAL_STORAGE_CFG_KEY, JSON.stringify(cfg)); } catch {} }
-              }
-            }}
-            logs={logs}
-            setLogs={setLogs}
-            jobs={jobs}
-            applications={applications}
-            profile={profile}
-            onApplyJob={async (job, coverLetter, screeningAnswers) => {
-              // Batch autopilot prepares materials as ready_to_submit (honest flow)
-              await handleSaveReadyToSubmit(job, coverLetter || "", screeningAnswers);
-            }}
-            toggleAutopilot={toggleAutopilot}
-          />
+          <div className="space-y-6">
+            <ReadyQueue
+              applications={applications}
+              jobs={jobs}
+              onOpenApply={handleOpenAssistedApply}
+              onMarkApplied={(appId) => handleUpdateApplicationStatus(appId, "applied")}
+              onSkip={(appId) => handleUpdateApplicationStatus(appId, "rejected")}
+            />
+            <AutoApplyAgent
+              autoApplyConfig={autoApplyConfig}
+              setAutoApplyConfig={(cfg) => {
+                if (typeof cfg === "function") {
+                  const updated = cfg(autoApplyConfig);
+                  setAutoApplyConfig(updated);
+                  if (user) updateAutoApplyConfigInDb(user.uid, updated);
+                  else { try { localStorage.setItem(LOCAL_STORAGE_CFG_KEY, JSON.stringify(updated)); } catch {} }
+                } else {
+                  setAutoApplyConfig(cfg);
+                  if (user) updateAutoApplyConfigInDb(user.uid, cfg);
+                  else { try { localStorage.setItem(LOCAL_STORAGE_CFG_KEY, JSON.stringify(cfg)); } catch {} }
+                }
+              }}
+              logs={logs}
+              setLogs={setLogs}
+              jobs={jobs}
+              applications={applications}
+              profile={profile}
+              onApplyJob={async (job, coverLetter, screeningAnswers) => {
+                await handleSaveReadyToSubmit(job, coverLetter || "", screeningAnswers);
+              }}
+              toggleAutopilot={toggleAutopilot}
+            />
+          </div>
         )}
 
         {activeTab === "tracker" && (
-          <KanbanBoard
-            applications={applications}
-            setApplications={setApplications}
-            onUpdateStatus={handleUpdateApplicationStatus}
-            onDeleteApplication={handleDeleteApplication}
-            onOpenOutreachForApp={(app) => {
-              setOutreachPrefill({
-                company: app.company,
-                jobTitle: app.title,
-                contactName: app.contactName,
-              });
-              setActiveTab("outreach");
-            }}
-          />
+          <div className="space-y-6">
+            <ReadyQueue
+              applications={applications}
+              jobs={jobs}
+              onOpenApply={handleOpenAssistedApply}
+              onMarkApplied={(appId) => handleUpdateApplicationStatus(appId, "applied")}
+              onSkip={(appId) => handleUpdateApplicationStatus(appId, "rejected")}
+            />
+            <KanbanBoard
+              applications={applications}
+              setApplications={setApplications}
+              onUpdateStatus={handleUpdateApplicationStatus}
+              onDeleteApplication={handleDeleteApplication}
+              onOpenOutreachForApp={(app) => {
+                setOutreachPrefill({
+                  company: app.company,
+                  jobTitle: app.title,
+                  contactName: app.contactName,
+                });
+                setActiveTab("outreach");
+              }}
+            />
+          </div>
         )}
 
         {activeTab === "outreach" && (
@@ -564,7 +670,6 @@ function MainAppContent() {
         )}
       </main>
 
-      {/* Assisted Apply Confirmation Modal */}
       {assistedApplyJob && (
         <AssistedApplyModal
           job={assistedApplyJob}

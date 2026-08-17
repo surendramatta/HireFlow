@@ -77,8 +77,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
               Welcome back, {userName} 👋
             </h1>
             <p className="text-sm text-slate-300 max-w-2xl leading-relaxed">
-              Your AI Copilot is scanning 12+ job platforms. Your current target is{" "}
-              <span className="text-indigo-300 font-semibold">{targetTitle}</span> with a minimum match threshold of{" "}
+              Your assisted apply copilot monitors Greenhouse, Lever, and Ashby boards. Target:{" "}
+              <span className="text-indigo-300 font-semibold">{targetTitle}</span> · min match{" "}
               <span className="text-emerald-400 font-semibold">{autoApplyConfig?.minMatchScore || 70}%</span>.
             </p>
           </div>
@@ -95,12 +95,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
               {autoApplyConfig.enabled ? (
                 <>
                   <Pause className="w-4 h-4 fill-current" />
-                  <span>Pause Autopilot</span>
+                  <span>Pause Batch Prep</span>
                 </>
               ) : (
                 <>
                   <Play className="w-4 h-4 fill-current" />
-                  <span>Resume Autopilot</span>
+                  <span>Enable Batch Prep</span>
                 </>
               )}
             </button>

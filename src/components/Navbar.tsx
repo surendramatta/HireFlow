@@ -43,7 +43,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     { id: "dashboard", label: "Dashboard", icon: <Sparkles className="w-4 h-4" /> },
     { id: "jobs", label: "Find Jobs", icon: <Briefcase className="w-4 h-4" /> },
     { id: "resume", label: "Resume AI", icon: <FileText className="w-4 h-4" /> },
-    { id: "autoapply", label: "Autopilot Agent", icon: <Bot className="w-4 h-4" />, badge: autoApplyConfig.enabled ? "ACTIVE" : undefined },
+    { id: "autoapply", label: "Batch Prep", icon: <Bot className="w-4 h-4" />, badge: autoApplyConfig.enabled ? "ON" : undefined },
     { id: "tracker", label: "App Tracker", icon: <Kanban className="w-4 h-4" />, badge: totalApplications },
     { id: "outreach", label: "Outreach AI", icon: <Send className="w-4 h-4" /> },
     { id: "interview", label: "Mock Interview", icon: <MessageSquareCode className="w-4 h-4" /> },
@@ -69,9 +69,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <span className="text-xs px-1.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-semibold">
                   AI
                 </span>
-                <span className="hidden md:inline-flex items-center space-x-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
-                  <Database className="w-3 h-3 text-emerald-400" />
-                  <span>Cloud DB Live</span>
+                <span className="hidden md:inline-flex items-center space-x-1 text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700 font-medium">
+                  <Database className="w-3 h-3" />
+                  <span>Assisted Apply</span>
                 </span>
               </div>
               <p className="text-[11px] text-slate-400 hidden sm:block">AI Job Hunt & Auto-Apply Copilot</p>
@@ -88,8 +88,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                   : "bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700"
               }`}
             >
-              <span className={`w-2 h-2 rounded-full ${autoApplyConfig.enabled ? "bg-emerald-400 animate-pulse" : "bg-slate-500"}`} />
-              <span>Autopilot: {autoApplyConfig.enabled ? "RUNNING" : "PAUSED"}</span>
+              <span className={`w-2 h-2 rounded-full ${autoApplyConfig.enabled ? "bg-emerald-400" : "bg-slate-500"}`} />
+              <span>Batch prep: {autoApplyConfig.enabled ? "ON" : "OFF"}</span>
               <span className="text-slate-400">({autoApplyConfig.appliedToday}/{autoApplyConfig.dailyLimit})</span>
             </button>
 
@@ -149,7 +149,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     className={`ml-1.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
                       isActive
                         ? "bg-white/20 text-white"
-                        : item.badge === "ACTIVE"
+                        : item.badge === "ON"
                         ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
                         : "bg-slate-800 text-slate-300"
                     }`}
