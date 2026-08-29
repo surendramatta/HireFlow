@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { lazy, Suspense, useState, useEffect } from "react";
 import { TabType, CandidateProfile, JobListing, ApplicationRecord, AutoApplyConfig, AutoApplyLog } from "./types";
 import { initialProfile, initialAutoApplyConfig } from "./data/mockData";
 import { AuthProvider, useAuth } from "./context/AuthContext";
@@ -19,15 +19,15 @@ import {
 } from "./services/firestoreService";
 
 import { Navbar } from "./components/Navbar";
-import { Dashboard } from "./components/Dashboard";
-import { JobSearch } from "./components/JobSearch";
-import { ResumeBuilder } from "./components/ResumeBuilder";
-import { AutoApplyAgent } from "./components/AutoApplyAgent";
-import { KanbanBoard } from "./components/KanbanBoard";
-import { OutreachStudio } from "./components/OutreachStudio";
-import { InterviewPrep } from "./components/InterviewPrep";
-import { AnalyticsView } from "./components/AnalyticsView";
-import { AssistedApplyModal } from "./components/AssistedApplyModal";
+const Dashboard = lazy(() => import("./components/Dashboard").then((module) => ({ default: module.Dashboard })));
+const JobSearch = lazy(() => import("./components/JobSearch").then((module) => ({ default: module.JobSearch })));
+const ResumeBuilder = lazy(() => import("./components/ResumeBuilder").then((module) => ({ default: module.ResumeBuilder })));
+const AutoApplyAgent = lazy(() => import("./components/AutoApplyAgent").then((module) => ({ default: module.AutoApplyAgent })));
+const KanbanBoard = lazy(() => import("./components/KanbanBoard").then((module) => ({ default: module.KanbanBoard })));
+const OutreachStudio = lazy(() => import("./components/OutreachStudio").then((module) => ({ default: module.OutreachStudio })));
+const InterviewPrep = lazy(() => import("./components/InterviewPrep").then((module) => ({ default: module.InterviewPrep })));
+const AnalyticsView = lazy(() => import("./components/AnalyticsView").then((module) => ({ default: module.AnalyticsView })));
+const AssistedApplyModal = lazy(() => import("./components/AssistedApplyModal").then((module) => ({ default: module.AssistedApplyModal })));
 
 const LOCAL_STORAGE_APPS_KEY = "hireflow_guest_applications";
 const LOCAL_STORAGE_LOGS_KEY = "hireflow_guest_logs";
@@ -348,6 +348,7 @@ function MainAppContent() {
       />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <Suspense fallback={<div className="py-16 text-center text-slate-400">Loading workspace…</div>}>
         {activeTab === "dashboard" && (
           <Dashboard
             jobs={jobs}
@@ -444,16 +445,19 @@ function MainAppContent() {
         {activeTab === "analytics" && (
           <AnalyticsView applications={applications} jobs={jobs} />
         )}
+        </Suspense>
       </main>
 
       {/* Assisted Apply Confirmation Modal */}
       {assistedApplyJob && (
-        <AssistedApplyModal
-          job={assistedApplyJob}
-          profile={profile}
-          onClose={() => setAssistedApplyJob(null)}
-          onConfirmSubmitted={handleConfirmSubmittedApplication}
-        />
+        <Suspense fallback={null}>
+          <AssistedApplyModal
+            job={assistedApplyJob}
+            profile={profile}
+            onClose={() => setAssistedApplyJob(null)}
+            onConfirmSubmitted={handleConfirmSubmittedApplication}
+          />
+        </Suspense>
       )}
     </div>
   );

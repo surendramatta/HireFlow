@@ -44,6 +44,7 @@ export const AssistedApplyModal: React.FC<Props> = ({
 
   useEffect(() => {
     if (!job) return;
+    const activeJob = job;
 
     let isMounted = true;
     setGenerating(true);
@@ -57,15 +58,15 @@ export const AssistedApplyModal: React.FC<Props> = ({
           const res = await postJson<{ coverLetter: string }>("/api/ai/generate-cover-letter", {
             candidateName: profile.fullName || "Candidate",
             candidateBackground: `${profile.skills?.join(", ") || ""}. ${profile.targetTitles?.join(", ") || ""}`,
-            jobTitle: job.title,
-            jobCompany: job.company,
-            jobDescription: job.description || job.requirements?.join(" ") || "Software engineering opportunity",
+            jobTitle: activeJob.title,
+            jobCompany: activeJob.company,
+            jobDescription: activeJob.description || activeJob.requirements?.join(" ") || "Software engineering opportunity",
             tone: "professional, tailored, high-impact",
           });
           generatedLetter = res.coverLetter;
         } catch (err: any) {
           console.warn("Cover letter fallback:", err.message);
-          generatedLetter = `Dear Hiring Team at ${job.company},\n\nI am writing to express my strong interest in the ${job.title} position. With my background in ${profile.skills?.join(", ") || "software engineering"}, I am confident I can make an immediate contribution to your team.\n\nBest regards,\n${profile.fullName || "Applicant"}`;
+          generatedLetter = `Dear Hiring Team at ${activeJob.company},\n\nI am writing to express my strong interest in the ${activeJob.title} position. With my background in ${profile.skills?.join(", ") || "software engineering"}, I am confident I can make an immediate contribution to your team.\n\nBest regards,\n${profile.fullName || "Applicant"}`;
           if (err.code === "ai_unavailable") {
             setAiError("AI tailoring is unavailable (API key not configured). Standard profile materials prepared below.");
           }
@@ -73,13 +74,13 @@ export const AssistedApplyModal: React.FC<Props> = ({
 
         // 2. Generate Screening Answers if job has requirements
         let generatedAnswers: Record<string, string> = {};
-        if (job.requirements && job.requirements.length > 0) {
+        if (activeJob.requirements && activeJob.requirements.length > 0) {
           try {
             const res = await postJson<{ answers: Record<string, string> }>("/api/ai/answer-screening-questions", {
-              questions: job.requirements.slice(0, 3),
+              questions: activeJob.requirements.slice(0, 3),
               candidateProfile: profile,
-              jobTitle: job.title,
-              jobCompany: job.company,
+              jobTitle: activeJob.title,
+              jobCompany: activeJob.company,
             });
             generatedAnswers = res.answers || {};
           } catch {
