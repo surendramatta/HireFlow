@@ -6,10 +6,11 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { COMPANY_BOARDS } from "./server/companyBoards";
 import { fetchGreenhouse, fetchLever, fetchAshby, StandardJobListing } from "./server/jobSources";
 
-dotenv.config();
+dotenv.config({ path: ['.env.local', '.env'] });
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT || 3000);
+const HOST = process.env.HOST || '127.0.0.1';
 
 app.use(express.json({ limit: "10mb" }));
 
@@ -1286,8 +1287,8 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://0.0.0.0:${PORT}`);
+  app.listen(PORT, HOST, () => {
+    console.log(`Server running on http://${HOST}:${PORT}`);
   });
 }
 

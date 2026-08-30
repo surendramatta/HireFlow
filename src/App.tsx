@@ -3,6 +3,7 @@ import { TabType, CandidateProfile, JobListing, ApplicationRecord, AutoApplyConf
 import { initialProfile, initialAutoApplyConfig } from "./data/mockData";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { postJson } from "./lib/apiClient";
+import { applicationStatus, submissionIncrement } from './lib/application-policy';
 import { 
   subscribeToJobs, 
   subscribeToApplications, 
@@ -217,7 +218,8 @@ function MainAppContent() {
   const handleConfirmSubmittedApplication = async (
     job: JobListing, 
     coverLetter: string, 
-    screeningAnswers?: Record<string, string>
+    screeningAnswers?: Record<string, string>,
+    confirmed = true
   ) => {
     const todayStr = new Date().toISOString().split("T")[0];
 
@@ -230,8 +232,8 @@ function MainAppContent() {
       location: job.location,
       salaryRange: job.salaryRange,
       platform: job.platform,
-      status: "applied",
-      appliedDate: todayStr,
+      status: applicationStatus(confirmed),
+      appliedDate: confirmed ? todayStr : '',
       lastUpdated: todayStr,
       matchScoreAtApply: job.matchScore,
       coverLetterUsed: coverLetter,
@@ -245,7 +247,7 @@ function MainAppContent() {
       role: job.title,
       status: "success",
       matchScore: job.matchScore,
-      message: `Submitted on ${job.platform} portal. Recorded in tracking dashboard.`,
+      message: confirmed ? `User confirmed submission on ${job.platform}.` : 'Materials prepared. Review and submit on the employer portal; no application has been sent.',
     };
 
     if (user) {
@@ -254,7 +256,7 @@ function MainAppContent() {
 
       const updatedConfig = {
         ...autoApplyConfig,
-        appliedToday: autoApplyConfig.appliedToday + 1,
+        appliedToday: autoApplyConfig.appliedToday + submissionIncrement(confirmed),
       };
       await updateAutoApplyConfigInDb(user.uid, updatedConfig);
     } else {
@@ -271,7 +273,7 @@ function MainAppContent() {
       });
 
       setAutoApplyConfig((prev) => {
-        const updated = { ...prev, appliedToday: prev.appliedToday + 1 };
+        const updated = { ...prev, appliedToday: prev.appliedToday + submissionIncrement(confirmed) };
         try { localStorage.setItem(LOCAL_STORAGE_CFG_KEY, JSON.stringify(updated)); } catch {}
         return updated;
       });
@@ -416,7 +418,7 @@ function MainAppContent() {
             applications={applications}
             profile={profile}
             onApplyJob={async (job, coverLetter, screeningAnswers) => {
-              await handleConfirmSubmittedApplication(job, coverLetter || "", screeningAnswers);
+              await handleConfirmSubmittedApplication(job, coverLetter || "", screeningAnswers, false);
             }}
             toggleAutopilot={toggleAutopilot}
           />

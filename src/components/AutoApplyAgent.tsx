@@ -180,7 +180,7 @@ export const AutoApplyAgent: React.FC<AutoApplyAgentProps> = ({
         await new Promise((r) => setTimeout(r, 400));
       }
 
-      // Phase 4: Submitting & Saving Record
+      // Preparing materials does not submit anything to the employer.
       setAgentProgress((prev) => prev ? { ...prev, currentPhase: "submitting" } : null);
       await onApplyJob(job, generatedLetter, screeningAnswers);
       await new Promise((r) => setTimeout(r, 500));
@@ -189,8 +189,8 @@ export const AutoApplyAgent: React.FC<AutoApplyAgentProps> = ({
     setAgentProgress({
       currentJobIndex: jobsToProcess.length,
       totalJobs: jobsToProcess.length,
-      currentJobTitle: "Batch Execution Complete!",
-      currentCompany: `${jobsToProcess.length} Applications Processed`,
+      currentJobTitle: "Materials Prepared — Review Required",
+      currentCompany: `${jobsToProcess.length} Drafts Prepared; None Submitted`,
       currentMatchScore: 100,
       currentPhase: "done",
     });
@@ -219,10 +219,10 @@ export const AutoApplyAgent: React.FC<AutoApplyAgentProps> = ({
           </div>
           <h1 className="text-xl font-extrabold text-white flex items-center space-x-2">
             <Bot className="w-5 h-5 text-emerald-400" />
-            <span>HireFlow Autopilot & Batch Application Engine</span>
+            <span>HireFlow Application Preparation</span>
           </h1>
           <p className="text-xs text-slate-400">
-            Processes job requirements against your parsed candidate profile, generates custom cover letters via Gemini, and automates 'Apply' actions.
+            Prepares application materials for review. You must submit on the employer portal and confirm submission yourself.
           </p>
         </div>
 
